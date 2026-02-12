@@ -1,0 +1,7 @@
+README.md
+pyproject.toml
+backend/__init__.py
+csc400.egg-info/PKG-INFO
+csc400.egg-info/SOURCES.txt
+csc400.egg-info/dependency_links.txt
+csc400.egg-info/top_level.txt

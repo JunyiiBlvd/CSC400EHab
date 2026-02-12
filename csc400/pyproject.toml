@@ -1,0 +1,7 @@
+[project]
+name = "csc400"
+version = "0.1.0"
+description = "E-Habitat simulation"
+
+[tool.setuptools]
+packages = ["backend"]
