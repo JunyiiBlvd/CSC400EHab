@@ -8,6 +8,9 @@ import time
 from typing import List, Dict, Any
 
 from .thermal import ThermalModel
+from .airflow import AirflowModel
+from .humidity import HumidityModel
+from .environment import EnvironmentalModel
 from .node import VirtualNode
 
 
@@ -20,7 +23,7 @@ def run_simulation(duration: int, seed: int = None, output_file: str = None):
         seed (int, optional): A random seed for deterministic runs.
         output_file (str, optional): Path to a CSV file to save the results.
     """
-    # Instantiate ThermalModel with reasonable defaults
+    # 1. Instantiate individual models
     thermal_model = ThermalModel(
         air_mass=50.0,
         heat_capacity=1005.0,
@@ -29,11 +32,29 @@ def run_simulation(duration: int, seed: int = None, output_file: str = None):
         initial_temperature=21.0,
         ambient_temperature=20.0,
     )
+    
+    airflow_model = AirflowModel(
+        nominal_flow=2.5
+    )
 
-    # Create a single VirtualNode
+    humidity_model = HumidityModel(
+        initial_humidity=45.0,
+        drift=0.01,
+        noise_amplitude=0.2,
+        random_seed=seed
+    )
+
+    # 2. Wrap them in the EnvironmentalModel
+    environmental_model = EnvironmentalModel(
+        thermal_model=thermal_model,
+        airflow_model=airflow_model,
+        humidity_model=humidity_model,
+    )
+
+    # 3. Create a single VirtualNode using the EnvironmentalModel
     node = VirtualNode(
         node_id="node-1",
-        thermal_model=thermal_model,
+        environmental_model=environmental_model,
         random_seed=seed
     )
 

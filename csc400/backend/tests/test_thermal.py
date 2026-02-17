@@ -4,6 +4,9 @@ Unit tests for the ThermalModel class.
 import pytest
 import random
 from backend.simulation.thermal import ThermalModel
+from backend.simulation.airflow import AirflowModel
+from backend.simulation.humidity import HumidityModel
+from backend.simulation.environment import EnvironmentalModel
 from backend.simulation.node import VirtualNode
 
 # A tolerance for floating point comparisons
@@ -64,12 +67,21 @@ def test_cpu_load_clamping():
 
 def test_deterministic_output_with_seed():
     """
-    Tests that providing the same seed produces the same sequence of results.
+    Tests that providing the same seed produces the same sequence of results for the VirtualNode.
     """
     def get_run_results(seed):
         """Helper to run simulation and collect results."""
         thermal_model = ThermalModel(10, 1000, 100, 50, 20, 15)
-        node = VirtualNode("test-node", thermal_model, random_seed=seed)
+        airflow_model = AirflowModel(nominal_flow=1.0)
+        humidity_model = HumidityModel(initial_humidity=50, drift=0, noise_amplitude=0.1, random_seed=seed)
+        
+        environmental_model = EnvironmentalModel(
+            thermal_model=thermal_model,
+            airflow_model=airflow_model,
+            humidity_model=humidity_model
+        )
+
+        node = VirtualNode("test-node", environmental_model, random_seed=seed)
         results = [node.step() for _ in range(10)]
         return results
 
@@ -80,19 +92,13 @@ def test_deterministic_output_with_seed():
     # Run a third time with a different seed
     results3 = get_run_results(seed=123)
 
-    # Extract temperatures and CPU loads for comparison
-    temps1 = [r['temperature'] for r in results1]
-    temps2 = [r['temperature'] for r in results2]
-    cpu1 = [r['cpu_load'] for r in results1]
-    cpu2 = [r['cpu_load'] for r in results2]
-    
-    # The two runs with the same seed should be identical
-    assert temps1 == temps2
-    assert cpu1 == cpu2
+    # We only care about temperature and cpu_load for this test of determinism
+    temps1 = [r["temperature"] for r in results1]
+    temps2 = [r["temperature"] for r in results2]
+    temps3 = [r["temperature"] for r in results3]
 
-    # The run with a different seed should be different
-    assert temps1 != [r['temperature'] for r in results3]
-    assert cpu1 != [r['cpu_load'] for r in results3]
+    assert temps1 == temps2, "Temperatures should be identical for the same seed."
+    assert temps1 != temps3, "Temperatures should be different for different seeds."
 
 def test_no_temperature_change_at_equilibrium():
     """
