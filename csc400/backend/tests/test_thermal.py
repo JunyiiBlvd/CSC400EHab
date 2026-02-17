@@ -3,7 +3,7 @@ Unit tests for the ThermalModel class.
 """
 import pytest
 import random
-from backend.simulation.thermal_model import ThermalModel
+from backend.simulation.thermal import ThermalModel
 from backend.simulation.node import VirtualNode
 
 # A tolerance for floating point comparisons

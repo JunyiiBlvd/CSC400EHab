@@ -7,7 +7,7 @@ import sys
 import time
 from typing import List, Dict, Any
 
-from .thermal_model import ThermalModel
+from .thermal import ThermalModel
 from .node import VirtualNode
 
 

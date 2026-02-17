@@ -6,7 +6,7 @@ import random
 from datetime import datetime, timezone
 from typing import Optional
 
-from .thermal_model import ThermalModel
+from .thermal import ThermalModel
 
 
 class VirtualNode:
