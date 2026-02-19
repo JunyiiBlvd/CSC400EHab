@@ -1,7 +1,118 @@
 "use client";
 import { Box, Paper, Typography } from "@mui/material";
+import { useEffect, useMemo, useState } from "react";
+import NodeGrid from "./components/NodeGrid";
+import NodeGauges from "./components/NodeGauges";
+import AlertsFeed from "./components/AlertsFeed";
+
+
+
+type Telemetry = {
+  node_id: string;
+  timestamp: string;
+  temperature: number;
+  cpu_load: number;
+};
 
 export default function Home() {
+  const [telemetry, setTelemetry] = useState<Telemetry | null>(null);
+  const [apiError, setApiError] = useState<string | null>(null);
+
+  // Keep last 5 minutes (300 samples)
+  const MAX_POINTS = 300;
+  const [history, setHistory] = useState<Telemetry[]>([]);
+
+  type AlertItem = {
+    id: string;
+    ts: string;
+    level: "info" | "warn" | "crit";
+    message: string;
+  };
+
+const [alerts, setAlerts] = useState<AlertItem[]>([]);
+
+
+
+  // Poll backend once per second
+  useEffect(() => {
+    let cancelled = false;
+
+    async function tick() {
+      try {
+        const res = await fetch("/api/telemetry/step", { cache: "no-store" });
+        if (!res.ok) throw new Error(`API error ${res.status}`);
+        const data = (await res.json()) as Telemetry;
+
+      if (!cancelled) {
+        setTelemetry(data);
+        setApiError(null);
+
+        setHistory((prev) => {
+          const next = [...prev, data];
+          if (next.length > MAX_POINTS) {
+            next.splice(0, next.length - MAX_POINTS);
+          }
+          return next;
+        });
+      }
+
+      } catch (err: any) {
+        if (!cancelled) {
+          setApiError(err?.message ?? "Failed to reach backend");
+        }
+      }
+    }
+
+    // initial fetch immediately
+    tick();
+
+    const id = setInterval(tick, 1000);
+    return () => {
+      cancelled = true;
+      clearInterval(id);
+    };
+  }, []);
+
+  // Alert generation
+  useEffect(() => {
+  if (!telemetry) return;
+
+  const warnTemp = 24;
+  const critTemp = 28;
+
+  setAlerts((prev) => {
+    const next = [...prev];
+
+    const push = (level: AlertItem["level"], message: string) => {
+      next.unshift({
+        id: `${telemetry.timestamp}-${level}-${message}`,
+        ts: telemetry.timestamp,
+        level,
+        message,
+      });
+    };
+
+    if (telemetry.temperature >= critTemp) {
+      push("crit", `🔥 ${telemetry.node_id} temperature CRITICAL (${telemetry.temperature.toFixed(2)} °C)`);
+    } else if (telemetry.temperature >= warnTemp) {
+      push("warn", `⚠️ ${telemetry.node_id} temperature elevated (${telemetry.temperature.toFixed(2)} °C)`);
+    }
+
+    if (telemetry.cpu_load >= 0.9) {
+      push("warn", `📈 ${telemetry.node_id} CPU high (${(telemetry.cpu_load * 100).toFixed(1)}%)`);
+    }
+
+    return next.slice(0, 10);
+  });
+}, [telemetry]);
+
+
+  const node1Text = useMemo(() => {
+    if (apiError) return `Backend offline: ${apiError}`;
+    if (!telemetry) return "Waiting for telemetry...";
+    return `Temp: ${telemetry.temperature.toFixed(2)} °C · CPU: ${(telemetry.cpu_load * 100).toFixed(1)}%`;
+  }, [telemetry, apiError]);
+
   return (
     <Box
       sx={{
@@ -33,17 +144,29 @@ export default function Home() {
           <Typography variant="body2" sx={{ opacity: 0.7 }}>
             Start/Stop simulation, configure thresholds, inject anomalies.
           </Typography>
+
+          <Box sx={{ mt: 2 }}>
+            <Typography variant="caption" sx={{ opacity: 0.7 }}>
+              API status
+            </Typography>
+            <Typography variant="body2" sx={{ mt: 0.5 }}>
+              {apiError ? "❌ Disconnected" : telemetry ? "✅ Connected" : "⏳ Connecting..."}
+            </Typography>
+          </Box>
         </Paper>
 
         {/* Right Panel */}
         <Box sx={{ display: "grid", gap: 2 }}>
+          {telemetry && (
+            <NodeGauges
+              temperature={telemetry.temperature}
+              cpuLoad={telemetry.cpu_load}
+              nodeId={telemetry.node_id}
+            />
+          )}
+
           {/* Alerts */}
-          <Paper sx={panelStyle}>
-            <Typography variant="h6">Alerts Feed</Typography>
-            <Typography variant="body2" sx={{ opacity: 0.7 }}>
-              Alerts will appear here when anomalies occur.
-            </Typography>
-          </Paper>
+          <AlertsFeed alerts={alerts} />
 
           {/* Comparison */}
           <Paper sx={panelStyle}>
@@ -54,22 +177,8 @@ export default function Home() {
           </Paper>
 
           {/* Nodes */}
-          <Box
-            sx={{
-              display: "grid",
-              gridTemplateColumns: "repeat(3, 1fr)",
-              gap: 2,
-            }}
-          >
-            {[1, 2, 3].map((node) => (
-              <Paper key={node} sx={panelStyle}>
-                <Typography variant="h6">Node {node}</Typography>
-                <Typography variant="body2" sx={{ opacity: 0.7 }}>
-                  Temperature / Humidity / Airflow
-                </Typography>
-              </Paper>
-            ))}
-          </Box>
+          <NodeGrid telemetry={telemetry} apiError={apiError} node1Text={node1Text} history={history} />
+
         </Box>
       </Box>
     </Box>
