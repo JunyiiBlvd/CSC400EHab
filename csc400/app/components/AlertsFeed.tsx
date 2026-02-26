@@ -1,25 +1,11 @@
 "use client";
 
 import { Paper, Typography, Box, Chip } from "@mui/material";
-
-export type AlertItem = {
-  id: string;
-  ts: string;
-  level: "info" | "warn" | "crit";
-  message: string;
-};
+import type { AlertItem } from "../lib/types";
 
 export default function AlertsFeed({ alerts }: { alerts: AlertItem[] }) {
   return (
-    <Paper
-      sx={{
-        p: 2,
-        borderRadius: 3,
-        bgcolor: "rgba(255,255,255,0.04)",
-        border: "1px solid rgba(255,255,255,0.12)",
-        color: "white",
-      }}
-    >
+    <Paper sx={{ p: 2, borderRadius: 3, bgcolor: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.12)", color: "white" }}>
       <Typography variant="h6" sx={{ mb: 2 }}>
         Alerts Feed
       </Typography>
@@ -48,20 +34,12 @@ export default function AlertsFeed({ alerts }: { alerts: AlertItem[] }) {
                   : "rgba(0,150,255,0.15)",
             }}
           >
-            <Typography variant="body2">
-              {alert.message}
-            </Typography>
+            <Typography variant="body2">{alert.message}</Typography>
 
             <Chip
               size="small"
               label={alert.level.toUpperCase()}
-              color={
-                alert.level === "crit"
-                  ? "error"
-                  : alert.level === "warn"
-                  ? "warning"
-                  : "info"
-              }
+              color={alert.level === "crit" ? "error" : alert.level === "warn" ? "warning" : "info"}
             />
           </Box>
         ))}

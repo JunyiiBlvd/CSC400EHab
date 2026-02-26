@@ -9,7 +9,6 @@ from backend.simulation.node import VirtualNode
 
 app = FastAPI(title="E-Habitat API")
 
-# Allow your Next.js dev server to call this API
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:3000"],
@@ -18,7 +17,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Simple: one node in memory
 thermal_model = ThermalModel(
     air_mass=50.0,
     heat_capacity=1005.0,
@@ -29,19 +27,14 @@ thermal_model = ThermalModel(
 )
 node = VirtualNode(node_id="node-1", thermal_model=thermal_model, random_seed=42)
 
-# ---- NEW: simple "environment + controls" state (kept in memory) ----
-# obstruction_ratio: 0.0 = no blockage, 1.0 = fully blocked airflow
-obstruction_ratio = 0.0
-
-# a simple baseline airflow value (0..1); we reduce it by obstruction_ratio
+# Simple environment, controls
+obstruction_ratio = 0.0  # 0..1
 BASE_AIRFLOW = 1.0
-
-# a simple humidity state that drifts; not physically perfect, just a useful signal
 humidity = 45.0
 
 
 class AirflowObstructionRequest(BaseModel):
-    ratio: float  # expected 0..1
+    ratio: float
 
 
 @app.get("/health")
@@ -51,43 +44,35 @@ def health():
 
 @app.get("/telemetry/step")
 def telemetry_step():
-    # legacy endpoint: keep as-is
     return node.step()
 
 
 @app.get("/telemetry/env_step")
 def telemetry_env_step():
-    """
-    NEW endpoint: includes airflow + humidity fields alongside node.step().
-    This is intentionally simple (in-memory state) so the frontend has more signals.
-    """
     global humidity, obstruction_ratio
 
     base = node.step()
 
-    # airflow reduced by obstruction
     airflow = max(0.0, BASE_AIRFLOW * (1.0 - obstruction_ratio))
 
-    # humidity drifts a little (and tends to rise when airflow is low)
-    humidity += (0.02 * (0.5 - airflow))  # small coupling to airflow
-    humidity += 0.05  # slow upward drift
+    # small drift; rises when airflow is low
+    humidity += 0.02 * (0.5 - airflow)
+    humidity += 0.05
     humidity = max(0.0, min(100.0, humidity))
 
-    # Optional ML placeholders (keep consistent shape even if not used yet)
-    anomaly_score: Optional[float] = None
-    is_anomaly: Optional[bool] = None
-
-    # Ensure timestamp exists (in case node.step() doesn't include it)
     if "timestamp" not in base:
         base["timestamp"] = datetime.now(timezone.utc).isoformat()
+
+    anomaly_score: Optional[float] = None
+    is_anomaly: Optional[bool] = None
 
     return {
         **base,
         "airflow": airflow,
         "humidity": humidity,
+        "obstruction_ratio": obstruction_ratio,
         "anomaly_score": anomaly_score,
         "is_anomaly": is_anomaly,
-        "obstruction_ratio": obstruction_ratio,
     }
 
 
