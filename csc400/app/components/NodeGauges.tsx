@@ -1,6 +1,6 @@
 "use client";
 
-import { Box, Paper, Typography } from "@mui/material";
+import { Box, Paper, Typography, Chip } from "@mui/material";
 import { Gauge } from "@mui/x-charts/Gauge";
 
 export default function NodeGauges({
@@ -8,12 +8,14 @@ export default function NodeGauges({
   cpuLoad,
   humidity,
   airflow,
+  isAnomaly = false,
   nodeId = "node-1",
 }: {
   temperature: number;
   cpuLoad: number; // 0..1
   humidity?: number;
   airflow?: number;
+  isAnomaly?: boolean;
   nodeId?: string;
 }) {
   const showHumidity = typeof humidity === "number";
@@ -21,10 +23,19 @@ export default function NodeGauges({
   const cols = showHumidity || showAirflow ? "repeat(4, 1fr)" : "repeat(2, 1fr)";
 
   return (
-    <Paper sx={{ p: 2, borderRadius: 3, bgcolor: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.12)", color: "white" }}>
-      <Typography variant="h6" sx={{ mb: 2 }}>
-        Live Gauges · {nodeId}
-      </Typography>
+    <Paper
+      sx={{
+        p: 2,
+        borderRadius: 3,
+        bgcolor: "rgba(255,255,255,0.04)",
+        border: "1px solid rgba(255,255,255,0.12)",
+        color: "white",
+      }}
+    >
+      <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between", mb: 2 }}>
+        <Typography variant="h6">Live Gauges · {nodeId}</Typography>
+        {isAnomaly ? <Chip label="ANOMALY" color="error" size="small" /> : <Chip label="Normal" size="small" />}
+      </Box>
 
       <Box sx={{ display: "grid", gridTemplateColumns: cols, gap: 2 }}>
         <Box>

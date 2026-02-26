@@ -1,25 +1,41 @@
 "use client";
-import { Box, Paper, Typography, Slider, Button, Stack } from "@mui/material";
-import { useEffect, useMemo, useState } from "react";
+
+import { Box, Paper, Typography, Slider, Button, Stack, Chip } from "@mui/material";
+import { useEffect, useMemo, useRef, useState } from "react";
+
 import NodeGrid from "./components/NodeGrid";
 import NodeGauges from "./components/NodeGauges";
 import AlertsFeed from "./components/AlertsFeed";
 
-import type { Telemetry, AlertItem } from "./lib/types";
-import { fetchTelemetryStep, setAirflowObstruction, simulateFanFailure, resetAirflow } from "./lib/api";
+import type { AlertItem, MlStatus, Telemetry } from "./lib/types";
+import {
+  fetchTelemetryStep,
+  fetchMlStatus,
+  reloadMlModel,
+  resetAirflow,
+  setAirflowObstruction,
+  simulateFanFailure,
+} from "./lib/api";
 
 export default function Home() {
   const [telemetry, setTelemetry] = useState<Telemetry | null>(null);
   const [apiError, setApiError] = useState<string | null>(null);
 
-  const MAX_POINTS = 300;
+  const MAX_POINTS = 300; // ~5 min @ 1Hz
   const [history, setHistory] = useState<Telemetry[]>([]);
+
   const [alerts, setAlerts] = useState<AlertItem[]>([]);
 
   const [obstructionRatio, setObstructionRatio] = useState<number>(0);
   const [controlsError, setControlsError] = useState<string | null>(null);
 
-  // Poll backend once per second
+  const [mlStatus, setMlStatus] = useState<MlStatus | null>(null);
+  const [mlError, setMlError] = useState<string | null>(null);
+
+  // Track when ML becomes "ready" so we can optionally emit a one-time alert
+  const prevMlReady = useRef<boolean>(false);
+
+  // Poll telemetry once per second
   useEffect(() => {
     let cancelled = false;
 
@@ -31,7 +47,6 @@ export default function Home() {
           setTelemetry(data);
           setApiError(null);
 
-          // keep slider in sync if backend reports it
           if (typeof data.obstruction_ratio === "number") {
             setObstructionRatio(data.obstruction_ratio);
           }
@@ -55,13 +70,51 @@ export default function Home() {
     };
   }, []);
 
-  // Alert generation (temp/cpu + humidity/airflow if present)
+  // Poll ML status every 3 seconds
+  useEffect(() => {
+    let cancelled = false;
+
+    async function tickMl() {
+      try {
+        const s = await fetchMlStatus();
+        if (!cancelled) {
+          setMlStatus(s);
+          setMlError(null);
+
+          // One-time "ready" alert when window first becomes ready
+          if (!prevMlReady.current && s.window_ready) {
+            prevMlReady.current = true;
+            setAlerts((prev) => [
+              {
+                id: `ml-ready-${Date.now()}`,
+                ts: new Date().toISOString(),
+                level: "info" as const,
+                message: `🧠 ML window ready (${s.points_in_window}/${s.window_size}). Anomaly scoring active.`,
+              },
+              ...prev,
+            ].slice(0, 10));
+          }
+          if (!s.window_ready) prevMlReady.current = false;
+        }
+      } catch (e: any) {
+        if (!cancelled) setMlError(e?.message ?? "Failed to load ML status");
+      }
+    }
+
+    tickMl();
+    const id = setInterval(tickMl, 3000);
+    return () => {
+      cancelled = true;
+      clearInterval(id);
+    };
+  }, []);
+
+  // Generate alerts from telemetry
   useEffect(() => {
     if (!telemetry) return;
 
     const warnTemp = 24;
     const critTemp = 28;
-
     const warnHumidityHi = 70;
     const warnHumidityLo = 20;
     const warnAirflowLow = 0.25;
@@ -101,7 +154,12 @@ export default function Home() {
       }
 
       if (telemetry.is_anomaly === true) {
-        push("crit", `🤖 ${telemetry.node_id} anomaly detected (score ${telemetry.anomaly_score ?? "?"})`);
+        push(
+          "crit",
+          `🤖 ${telemetry.node_id} anomaly detected (score ${
+            typeof telemetry.anomaly_score === "number" ? telemetry.anomaly_score.toFixed(3) : "?"
+          })`
+        );
       }
 
       return next.slice(0, 10);
@@ -115,10 +173,10 @@ export default function Home() {
     const extras: string[] = [];
     if (typeof telemetry.humidity === "number") extras.push(`Hum: ${telemetry.humidity.toFixed(1)}%`);
     if (typeof telemetry.airflow === "number") extras.push(`Air: ${telemetry.airflow.toFixed(2)}`);
+    if (telemetry.is_anomaly === true) extras.push("ANOMALY");
 
-    return `Temp: ${telemetry.temperature.toFixed(2)} °C · CPU: ${(telemetry.cpu_load * 100).toFixed(1)}%${
-      extras.length ? " · " + extras.join(" · ") : ""
-    }`;
+    const extraText = extras.length ? ` · ${extras.join(" · ")}` : "";
+    return `Temp: ${telemetry.temperature.toFixed(2)} °C · CPU: ${(telemetry.cpu_load * 100).toFixed(1)}%${extraText}`;
   }, [telemetry, apiError]);
 
   async function applyObstruction(ratio: number) {
@@ -151,11 +209,35 @@ export default function Home() {
     }
   }
 
+  async function doReloadMl() {
+    try {
+      setMlError(null);
+      const r = await reloadMlModel();
+      if (!r.ok) setMlError(r.error ?? "Reload failed");
+      const s = await fetchMlStatus();
+      setMlStatus(s);
+    } catch (e: any) {
+      setMlError(e?.message ?? "Failed to reload ML model");
+    }
+  }
+
+  const anomalyChip =
+    telemetry?.is_anomaly === true ? (
+      <Chip label="ANOMALY" color="error" size="small" />
+    ) : mlStatus?.window_ready ? (
+      <Chip label="ML Ready" color="success" size="small" />
+    ) : (
+      <Chip label="ML Warming" color="warning" size="small" />
+    );
+
   return (
     <Box sx={{ minHeight: "100vh", bgcolor: "#0b1220", color: "white", p: 3 }}>
-      <Typography variant="h4" sx={{ fontWeight: 700, mb: 3 }}>
-        E-Habitat Dashboard
-      </Typography>
+      <Box sx={{ display: "flex", alignItems: "center", gap: 2, mb: 3 }}>
+        <Typography variant="h4" sx={{ fontWeight: 700 }}>
+          E-Habitat Dashboard
+        </Typography>
+        {anomalyChip}
+      </Box>
 
       <Box sx={{ display: "grid", gridTemplateColumns: "320px 1fr", gap: 2 }}>
         <Paper sx={panelStyle}>
@@ -164,7 +246,7 @@ export default function Home() {
           </Typography>
 
           <Typography variant="body2" sx={{ opacity: 0.7 }}>
-            Start/Stop simulation, configure thresholds, inject anomalies.
+            Inject conditions and observe telemetry + ML detection.
           </Typography>
 
           <Box sx={{ mt: 2 }}>
@@ -206,6 +288,38 @@ export default function Home() {
               </Typography>
             )}
           </Box>
+
+          <Box sx={{ mt: 3 }}>
+            <Typography variant="caption" sx={{ opacity: 0.7 }}>
+              ML status
+            </Typography>
+
+            <Typography variant="body2" sx={{ mt: 0.5 }}>
+              {!mlStatus
+                ? "⏳ Loading..."
+                : mlStatus.model_loaded
+                ? `✅ Model loaded · window ${mlStatus.points_in_window}/${mlStatus.window_size}${
+                    mlStatus.window_ready ? " · ready" : " · warming up"
+                  }`
+                : `❌ Model not loaded`}
+            </Typography>
+
+            {mlStatus?.model_load_error && (
+              <Typography variant="body2" sx={{ mt: 1, opacity: 0.85 }}>
+                ⚠️ {mlStatus.model_load_error}
+              </Typography>
+            )}
+
+            {mlError && (
+              <Typography variant="body2" sx={{ mt: 1, opacity: 0.85 }}>
+                ⚠️ {mlError}
+              </Typography>
+            )}
+
+            <Button variant="outlined" onClick={doReloadMl} sx={{ mt: 1 }}>
+              Reload ML model
+            </Button>
+          </Box>
         </Paper>
 
         <Box sx={{ display: "grid", gap: 2 }}>
@@ -215,6 +329,7 @@ export default function Home() {
               cpuLoad={telemetry.cpu_load}
               humidity={telemetry.humidity}
               airflow={telemetry.airflow}
+              isAnomaly={telemetry.is_anomaly === true}
               nodeId={telemetry.node_id}
             />
           )}

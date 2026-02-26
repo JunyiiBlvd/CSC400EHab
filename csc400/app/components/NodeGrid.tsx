@@ -1,6 +1,6 @@
 "use client";
 
-import { Box, Paper, Typography } from "@mui/material";
+import { Box, Paper, Typography, Chip } from "@mui/material";
 import Sparkline from "./Sparkline";
 import type { Telemetry } from "../lib/types";
 
@@ -12,11 +12,22 @@ type NodeGridProps = {
 };
 
 export default function NodeGrid({ telemetry, apiError, node1Text, history }: NodeGridProps) {
+  const isAnomaly = telemetry?.is_anomaly === true;
+
   return (
     <Box sx={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 2 }}>
       {[1, 2, 3].map((node) => (
         <Paper key={node} sx={panelStyle}>
-          <Typography variant="h6">Node {node}</Typography>
+          <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+            <Typography variant="h6">Node {node}</Typography>
+            {node === 1 && telemetry ? (
+              isAnomaly ? (
+                <Chip label="ANOMALY" color="error" size="small" />
+              ) : (
+                <Chip label="OK" color="success" size="small" />
+              )
+            ) : null}
+          </Box>
 
           <Typography variant="body2" sx={{ opacity: 0.7, mt: 0.5 }}>
             {node === 1 ? node1Text : apiError ? "Backend offline (no data)" : "Temperature / Humidity / Airflow"}
@@ -63,6 +74,20 @@ export default function NodeGrid({ telemetry, apiError, node1Text, history }: No
                     points={history.map((p) => ({
                       t: Date.parse(p.timestamp),
                       v: typeof p.airflow === "number" ? p.airflow : 0,
+                    }))}
+                  />
+                </>
+              )}
+
+              {history.some((p) => typeof p.anomaly_score === "number") && (
+                <>
+                  <Typography variant="caption" sx={{ opacity: 0.7 }}>
+                    Anomaly score
+                  </Typography>
+                  <Sparkline
+                    points={history.map((p) => ({
+                      t: Date.parse(p.timestamp),
+                      v: typeof p.anomaly_score === "number" ? p.anomaly_score : 0,
                     }))}
                   />
                 </>
