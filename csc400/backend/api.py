@@ -76,6 +76,9 @@ except Exception as e:
 class AirflowObstructionRequest(BaseModel):
     ratio: float  # expected 0..1
 
+class HumiditySetRequest(BaseModel):
+    humidity: float  # expected 0..100
+
 
 # -----------------------------
 # Routes
@@ -153,6 +156,12 @@ def fan_failure():
 def reset_airflow():
     airflow_model.reset()
     return {"ok": True, "obstruction_ratio": airflow_model.obstruction_ratio}
+
+@app.post("/controls/set_humidity")
+def set_humidity(req: HumiditySetRequest):
+    # clamp 0..100
+    humidity_model.current_humidity = max(0.0, min(100.0, float(req.humidity)))
+    return {"ok": True, "humidity": humidity_model.current_humidity}
 
 
 # -----------------------------

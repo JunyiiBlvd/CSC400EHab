@@ -35,6 +35,18 @@ export async function resetAirflow(): Promise<{ ok: true; obstruction_ratio: num
   return (await res.json()) as { ok: true; obstruction_ratio: number };
 }
 
+export async function setHumidity(
+  humidity: number
+): Promise<{ ok: true; humidity: number }> {
+  const res = await fetch("/api/controls/set_humidity", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ humidity }),
+  });
+  if (!res.ok) throw new Error(`API error ${res.status}`);
+  return (await res.json()) as { ok: true; humidity: number };
+}
+
 export async function fetchMlStatus(): Promise<MlStatus> {
   const res = await fetch("/api/ml/status", { cache: "no-store" });
   if (!res.ok) throw new Error(`ML status error ${res.status}`);

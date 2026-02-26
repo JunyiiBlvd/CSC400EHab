@@ -15,6 +15,7 @@ import {
   resetAirflow,
   setAirflowObstruction,
   simulateFanFailure,
+  setHumidity,
 } from "./lib/api";
 
 export default function Home() {
@@ -31,6 +32,9 @@ export default function Home() {
 
   const [mlStatus, setMlStatus] = useState<MlStatus | null>(null);
   const [mlError, setMlError] = useState<string | null>(null);
+
+  const [humiditySet, setHumiditySet] = useState<number>(45);
+  const humidityInitialized = useRef(false);
 
   // Track when ML becomes "ready" so we can optionally emit a one-time alert
   const prevMlReady = useRef<boolean>(false);
@@ -49,6 +53,11 @@ export default function Home() {
 
           if (typeof data.obstruction_ratio === "number") {
             setObstructionRatio(data.obstruction_ratio);
+          }
+
+          if (!humidityInitialized.current && typeof data.humidity === "number") {
+            setHumiditySet(data.humidity);
+            humidityInitialized.current = true;
           }
 
           setHistory((prev) => {
@@ -209,6 +218,16 @@ export default function Home() {
     }
   }
 
+  async function applyHumidity(h: number) {
+  try {
+    setControlsError(null);
+    const res = await setHumidity(h);
+    setHumiditySet(res.humidity);
+  } catch (e: any) {
+    setControlsError(e?.message ?? "Failed to update humidity");
+  }
+}
+
   async function doReloadMl() {
     try {
       setMlError(null);
@@ -281,6 +300,22 @@ export default function Home() {
                 Reset airflow
               </Button>
             </Stack>
+
+            <Box sx={{ mt: 3 }}>
+              <Typography variant="caption" sx={{ opacity: 0.7 }}>
+                Humidity (%)
+              </Typography>
+
+              <Slider
+                value={humiditySet}
+                min={0}
+                max={100}
+                step={1}
+                onChange={(_, v) => setHumiditySet(v as number)}
+                onChangeCommitted={(_, v) => applyHumidity(v as number)}
+                sx={{ mt: 1 }}
+              />
+            </Box>
 
             {controlsError && (
               <Typography variant="body2" sx={{ mt: 1, opacity: 0.85 }}>
