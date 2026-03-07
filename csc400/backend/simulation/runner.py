@@ -8,6 +8,8 @@ import time
 from typing import List, Dict, Any
 
 from .thermal_model import ThermalModel
+from .airflow import AirflowModel
+from .humidity import HumidityModel
 from .node import VirtualNode
 
 
@@ -30,10 +32,18 @@ def run_simulation(duration: int, seed: int = None, output_file: str = None):
         ambient_temperature=20.0,
     )
 
+    # Create an AirflowModel
+    airflow_model = AirflowModel(nominal_flow=100.0)
+
+    # Create a HumidityModel
+    humidity_model = HumidityModel(initial_humidity=50.0)
+
     # Create a single VirtualNode
     node = VirtualNode(
         node_id="node-1",
         thermal_model=thermal_model,
+        airflow_model=airflow_model,
+        humidity_model=humidity_model,
         random_seed=seed
     )
 

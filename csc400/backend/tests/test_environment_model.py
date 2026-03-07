@@ -1,7 +1,7 @@
 import pytest
 from unittest.mock import MagicMock
 from backend.simulation.environment import EnvironmentalModel
-from backend.simulation.thermal import ThermalModel
+from backend.simulation.thermal_model import ThermalModel
 from backend.simulation.airflow import AirflowModel
 from backend.simulation.humidity import HumidityModel
 
@@ -15,6 +15,7 @@ def test_step_returns_correct_dictionary():
     # Configure mock return values
     mock_thermal.step.return_value = 25.5
     mock_airflow.step.return_value = 1.2
+    mock_airflow.nominal_flow = 1.5
     mock_humidity.step.return_value = 45.0
 
     # Instantiate the EnvironmentalModel with mocks
@@ -29,7 +30,7 @@ def test_step_returns_correct_dictionary():
     result = env_model.step(cpu_load)
 
     # Assert that the underlying models' step methods were called
-    mock_thermal.step.assert_called_once_with(cpu_load)
+    mock_thermal.step.assert_called_once_with(cpu_load, airflow_ratio=1.2/1.5)
     mock_airflow.step.assert_called_once()
     mock_humidity.step.assert_called_once()
 

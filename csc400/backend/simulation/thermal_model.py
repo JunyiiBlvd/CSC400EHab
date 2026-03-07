@@ -39,7 +39,7 @@ class ThermalModel:
         self.temperature = initial_temperature
         self.ambient_temperature = ambient_temperature
 
-    def step(self, cpu_load: float, dt: float = 1.0) -> float:
+    def step(self, cpu_load: float, dt: float = 1.0, airflow_ratio: float = 1.0) -> float:
         """
         Advances the thermal simulation by one time step.
 
@@ -48,9 +48,10 @@ class ThermalModel:
         P_heat = k * cpu_load
             - Heat generated is proportional to the CPU load.
 
-        CoolingPower = cooling_coefficient * (current_temp - ambient_temp)
+        CoolingPower = (cooling_coefficient * airflow_ratio) * (current_temp - ambient_temp)
             - Cooling is proportional to the temperature difference between
-              the node and the ambient environment (Newton's Law of Cooling).
+              the node and the ambient environment (Newton's Law of Cooling),
+              scaled by the current airflow efficiency.
 
         T_next = T_current + (P_heat - CoolingPower) / (air_mass * heat_capacity) * dt
             - The change in temperature is the net power (heat generated minus
@@ -59,6 +60,7 @@ class ThermalModel:
         Args:
             cpu_load (float): The current CPU load, as a fraction (0.0 to 1.0).
             dt (float): The duration of the time step in seconds.
+            airflow_ratio (float): The ratio of current airflow to nominal airflow (0.0 to 1.0).
 
         Returns:
             float: The updated temperature of the node in Celsius.
@@ -67,7 +69,10 @@ class ThermalModel:
         clamped_cpu_load = max(0.0, min(1.0, cpu_load))
 
         p_heat = self.heat_coefficient * clamped_cpu_load
-        cooling_power = self.cooling_coefficient * (self.temperature - self.ambient_temperature)
+        
+        # Scale cooling power by airflow ratio
+        effective_cooling = self.cooling_coefficient * airflow_ratio
+        cooling_power = effective_cooling * (self.temperature - self.ambient_temperature)
 
         thermal_mass = self.air_mass * self.heat_capacity
         

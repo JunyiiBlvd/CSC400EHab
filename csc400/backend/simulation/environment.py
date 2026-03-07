@@ -1,4 +1,4 @@
-from backend.simulation.thermal import ThermalModel
+from backend.simulation.thermal_model import ThermalModel
 from backend.simulation.airflow import AirflowModel
 from backend.simulation.humidity import HumidityModel
 
@@ -32,8 +32,13 @@ class EnvironmentalModel:
             dict: A dictionary containing the updated environmental state:
                   {"temperature": float, "airflow": float, "humidity": float}
         """
-        temperature = self.thermal_model.step(cpu_load)
         airflow = self.airflow_model.step()
+        airflow_ratio = (
+            airflow / self.airflow_model.nominal_flow 
+            if self.airflow_model.nominal_flow > 0 else 0.0
+        )
+        
+        temperature = self.thermal_model.step(cpu_load, airflow_ratio=airflow_ratio)
         humidity = self.humidity_model.step()
 
         return {

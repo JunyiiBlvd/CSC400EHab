@@ -1,4 +1,3 @@
-
 # ML Feature Extraction for Anomaly Detection
 
 ## 1. Overview
@@ -13,9 +12,9 @@ Anomaly detection in time-series data often requires contextual information. A s
 
 For each variable in the telemetry stream, we calculate the following three features over the current window:
 
-*   **Mean:** The average value of the variable within the window. This provides a measure of the central tendency.
-*   **Variance:** The variance of the values within the window. This measures the dispersion or volatility of the variable.
-*   **Rate of Change:** The difference between the last and first data points in the window. This captures the trend of the variable over the window.
+- **Mean:** The average value of the variable within the window. This provides a measure of the central tendency.
+- **Variance:** The variance of the values within the window. This measures the dispersion or volatility of the variable.
+- **Rate of Change:** The difference between the last and first data points in the window. This captures the trend of the variable over the window.
 
 ## 4. Feature Vector Structure
 
@@ -40,11 +39,11 @@ The feature extraction process produces a 12-dimensional feature vector. The fea
 
 ```json
 [
-    {"temperature": 20, "humidity": 50, "airflow": 100, "cpu_load": 30},
-    {"temperature": 21, "humidity": 51, "airflow": 101, "cpu_load": 32},
-    {"temperature": 22, "humidity": 52, "airflow": 102, "cpu_load": 34},
-    {"temperature": 23, "humidity": 53, "airflow": 103, "cpu_load": 36},
-    {"temperature": 24, "humidity": 54, "airflow": 104, "cpu_load": 38}
+  { "temperature": 20, "humidity": 50, "airflow": 100, "cpu_load": 30 },
+  { "temperature": 21, "humidity": 51, "airflow": 101, "cpu_load": 32 },
+  { "temperature": 22, "humidity": 52, "airflow": 102, "cpu_load": 34 },
+  { "temperature": 23, "humidity": 53, "airflow": 103, "cpu_load": 36 },
+  { "temperature": 24, "humidity": 54, "airflow": 104, "cpu_load": 38 }
 ]
 ```
 
@@ -69,11 +68,11 @@ The feature extraction process produces a 12-dimensional feature vector. The fea
 
 ## 6. Limitations
 
-*   **Fixed Window Size:** The current implementation uses a fixed window size. This may not be optimal for all types of anomalies.
-*   **Limited Features:** The feature set is relatively simple. More complex features, such as frequency domain features (e.g., Fourier transforms), could capture additional information.
+- **Fixed Window Size:** The current implementation uses a fixed window size. This may not be optimal for all types of anomalies.
+- **Limited Features:** The feature set is relatively simple. More complex features, such as frequency domain features (e.g., Fourier transforms), could capture additional information.
 
 ## 7. Future Improvements
 
-*   **Adaptive Window Size:** The window size could be dynamically adjusted based on the characteristics of the data.
-*   **Expanded Feature Set:** Additional features could be incorporated, such as moving averages with different window sizes, or features derived from the frequency domain.
-*   **Online Standardization:** The features could be standardized (e.g., using a running mean and standard deviation) to improve the performance of some machine learning models.
+- **Adaptive Window Size:** The window size could be dynamically adjusted based on the characteristics of the data.
+- **Expanded Feature Set:** Additional features could be incorporated, such as moving averages with different window sizes, or features derived from the frequency domain.
+- **Online Standardization:** The features could be standardized (e.g., using a running mean and standard deviation) to improve the performance of some machine learning models.

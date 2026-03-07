@@ -1,4 +1,3 @@
-
 import unittest
 import numpy as np
 from collections import deque
@@ -31,12 +30,12 @@ class TestSlidingWindowFeatureExtractor(unittest.TestCase):
         self.assertTrue(self.extractor.is_window_ready())
 
     def test_feature_extraction_length(self):
-        """Test that the feature vector has the correct length."""
+        """Test that the feature vector has the correct length (9)."""
         for point in self.test_data:
             self.extractor.add_point(point)
         
         features = self.extractor.extract_features()
-        self.assertEqual(len(features), 12)
+        self.assertEqual(len(features), 9)
 
     def test_mean_calculation(self):
         """Test the correctness of the mean calculation."""
@@ -48,13 +47,11 @@ class TestSlidingWindowFeatureExtractor(unittest.TestCase):
         # Expected means
         temp_mean = np.mean([20, 21, 22, 23, 24])
         hum_mean = np.mean([50, 51, 52, 53, 54])
-        air_mean = np.mean([100, 101, 102, 103, 104])
         cpu_mean = np.mean([30, 32, 34, 36, 38])
 
         self.assertAlmostEqual(features[0], temp_mean)
         self.assertAlmostEqual(features[3], hum_mean)
-        self.assertAlmostEqual(features[6], air_mean)
-        self.assertAlmostEqual(features[9], cpu_mean)
+        self.assertAlmostEqual(features[6], cpu_mean)
 
     def test_variance_calculation(self):
         """Test the correctness of the variance calculation."""
@@ -66,13 +63,11 @@ class TestSlidingWindowFeatureExtractor(unittest.TestCase):
         # Expected variances
         temp_var = np.var([20, 21, 22, 23, 24])
         hum_var = np.var([50, 51, 52, 53, 54])
-        air_var = np.var([100, 101, 102, 103, 104])
         cpu_var = np.var([30, 32, 34, 36, 38])
 
         self.assertAlmostEqual(features[1], temp_var)
         self.assertAlmostEqual(features[4], hum_var)
-        self.assertAlmostEqual(features[7], air_var)
-        self.assertAlmostEqual(features[10], cpu_var)
+        self.assertAlmostEqual(features[7], cpu_var)
 
     def test_rate_of_change_calculation(self):
         """Test the correctness of the rate-of-change calculation."""
@@ -84,13 +79,11 @@ class TestSlidingWindowFeatureExtractor(unittest.TestCase):
         # Expected rates of change
         temp_roc = 24 - 20
         hum_roc = 54 - 50
-        air_roc = 104 - 100
         cpu_roc = 38 - 30
 
         self.assertAlmostEqual(features[2], temp_roc)
         self.assertAlmostEqual(features[5], hum_roc)
-        self.assertAlmostEqual(features[8], air_roc)
-        self.assertAlmostEqual(features[11], cpu_roc)
+        self.assertAlmostEqual(features[8], cpu_roc)
 
     def test_sliding_window_behavior(self):
         """Test that the window correctly slides."""

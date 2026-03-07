@@ -39,20 +39,16 @@ class SlidingWindowFeatureExtractor:
     def extract_features(self) -> list[float]:
         """
         Calculates features from the current window of data.
-
-        Returns:
-            A list of floats representing the calculated features.
-            The features are ordered as:
-            [temp_mean, temp_var, temp_roc,
-             hum_mean, hum_var, hum_roc,
-             air_mean, air_var, air_roc,
-             cpu_mean, cpu_var, cpu_roc]
+        Returns a 9-dimensional vector (temp, hum, cpu_load).
+        Airflow is excluded because it is static in normal baseline.
         """
         if not self.is_window_ready():
             raise ValueError("Window is not ready for feature extraction.")
 
         features = []
-        for var in self.variables:
+        # Only use variables that have variance in the baseline
+        active_variables = ['temperature', 'humidity', 'cpu_load']
+        for var in active_variables:
             values = [point[var] for point in self.window]
             
             mean = np.mean(values)

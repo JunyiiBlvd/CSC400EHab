@@ -2,6 +2,8 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from backend.simulation.thermal_model import ThermalModel
+from backend.simulation.airflow import AirflowModel
+from backend.simulation.humidity import HumidityModel
 from backend.simulation.node import VirtualNode
 
 app = FastAPI(title="E-Habitat API")
@@ -24,7 +26,16 @@ thermal_model = ThermalModel(
     initial_temperature=21.0,
     ambient_temperature=20.0,
 )
-node = VirtualNode(node_id="node-1", thermal_model=thermal_model, random_seed=42)
+airflow_model = AirflowModel(nominal_flow=100.0)
+humidity_model = HumidityModel(initial_humidity=50.0)
+
+node = VirtualNode(
+    node_id="node-1", 
+    thermal_model=thermal_model, 
+    airflow_model=airflow_model,
+    humidity_model=humidity_model,
+    random_seed=42
+)
 
 
 @app.get("/health")

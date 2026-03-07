@@ -2,27 +2,30 @@
 import joblib
 import numpy as np
 import os
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 
 class AnomalyModel:
     """
     Handles runtime loading and inference for the anomaly detection model.
     """
 
-    def __init__(self, model_path: str = "backend/ml/isolation_forest.pkl"):
+    def __init__(self, model_path: str = "backend/ml/isolation_forest.pkl", 
+                 scaler_path: Optional[str] = None):
         """
-        Initializes the AnomalyModel by loading the serialized Isolation Forest.
+        Initializes the AnomalyModel by loading the serialized Isolation Forest and optional scaler.
 
         Args:
             model_path (str): The path to the .pkl model file.
+            scaler_path (Optional[str]): The path to the .pkl scaler file.
         """
         if not os.path.exists(model_path):
             raise FileNotFoundError(f"Model file not found at {model_path}. Please run train_model.py first.")
         
         try:
             self.model = joblib.load(model_path)
+            self.scaler = joblib.load(scaler_path) if scaler_path and os.path.exists(scaler_path) else None
         except Exception as e:
-            raise RuntimeError(f"Failed to load model from {model_path}: {e}")
+            raise RuntimeError(f"Failed to load model artifacts: {e}")
 
     def predict(self, feature_vector: List[float]) -> Dict[str, Any]:
         """
@@ -38,6 +41,10 @@ class AnomalyModel:
         """
         # Reshape for scikit-learn (expects 2D array: [n_samples, n_features])
         X = np.array(feature_vector).reshape(1, -1)
+        
+        # Apply scaling if available
+        if self.scaler:
+            X = self.scaler.transform(X)
         
         # decision_function returns the anomaly score (offset by contamination)
         # Higher score = more normal; Lower score = more anomalous
