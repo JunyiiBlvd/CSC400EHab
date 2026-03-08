@@ -1,13 +1,14 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from typing import Optional
+from typing import Optional, Dict
 import os
+import asyncio
+import json
+import time
 
 from backend.simulation.thermal_model import ThermalModel
 from backend.simulation.node import VirtualNode
-
-# Use existing backend logic
 from backend.simulation.airflow import AirflowModel
 from backend.simulation.humidity import HumidityModel
 from backend.ml.feature_extraction import SlidingWindowFeatureExtractor
@@ -25,50 +26,23 @@ app.add_middleware(
 )
 
 # -----------------------------
-# Core simulation (existing)
+# WebSocket Nodes Initialization
 # -----------------------------
-thermal_model = ThermalModel(
-    air_mass=50.0,
-    heat_capacity=1005.0,
-    heat_coefficient=500.0,
-    cooling_coefficient=300.0,
-    initial_temperature=21.0,
-    ambient_temperature=20.0,
-)
-node = VirtualNode(node_id="node-1", thermal_model=thermal_model, random_seed=42)
+def make_node(node_id: str, seed: int, initial_temp: float):
+    thermal = ThermalModel(50.0, 1005.0, 500.0, 300.0, 
+                           initial_temp, 20.0)
+    airflow = AirflowModel(nominal_flow=2.5, 
+                           random_seed=seed + 1000)
+    humidity = HumidityModel(45.0, 0.01, 0.2, 
+                             seed + 2000, reference_temp=21.0)
+    return VirtualNode(node_id, thermal, airflow, humidity,
+                       random_seed=seed + 3000)
 
-# -----------------------------
-# Environment models (existing backend logic)
-# -----------------------------
-airflow_model = AirflowModel(nominal_flow=1.0, obstruction_ratio=0.0)
-humidity_model = HumidityModel(
-    initial_humidity=45.0,
-    drift=0.05,
-    noise_amplitude=0.2,
-    random_seed=42,
-)
-
-# -----------------------------
-# ML runtime (existing backend logic)
-# -----------------------------
-feature_extractor = SlidingWindowFeatureExtractor(window_size=10)
-
-# Robust absolute path to the model file (works no matter where uvicorn is launched)
-BACKEND_DIR = os.path.dirname(__file__)
-MODEL_PATH = os.path.join(BACKEND_DIR, "ml", "isolation_forest.pkl")
-
-anomaly_model: Optional[AnomalyModel] = None
-model_loaded: bool = False
-model_load_error: Optional[str] = None
-
-try:
-    anomaly_model = AnomalyModel(model_path=MODEL_PATH)
-    model_loaded = True
-except Exception as e:
-    anomaly_model = None
-    model_loaded = False
-    model_load_error = str(e)
-
+nodes: Dict[str, VirtualNode] = {
+    'node-1': make_node('node-1', 42, 21.0),
+    'node-2': make_node('node-2', 43, 22.0),
+    'node-3': make_node('node-3', 44, 21.5),
+}
 
 # -----------------------------
 # Request bodies
@@ -88,111 +62,54 @@ def health():
     return {"ok": True}
 
 
-@app.get("/telemetry/step")
-def telemetry_step():
-    """
-    Legacy endpoint (kept).
-    Returns the base node telemetry (temperature, cpu_load, timestamp, node_id).
-    """
-    return node.step()
-
-
-@app.get("/telemetry/env_step")
-def telemetry_env_step():
-    """
-    Main endpoint for the dashboard:
-    - node telemetry (temperature/cpu/timestamp)
-    - airflow + humidity from real backend models
-    - anomaly_score + is_anomaly from IsolationForest once the window is ready
-    """
-    base = node.step()
-
-    airflow = airflow_model.step()
-    humidity = humidity_model.step()
-
-    enriched = {
-        **base,
-        "airflow": airflow,
-        "humidity": humidity,
-        "obstruction_ratio": airflow_model.obstruction_ratio,
-    }
-
-    # Feed the sliding window (expects keys: temperature/humidity/airflow/cpu_load)
-    feature_extractor.add_point(enriched)
-
-    anomaly_score: Optional[float] = None
-    is_anomaly: Optional[bool] = None
-
-    # Only predict once window is full and model is loaded
-    if anomaly_model is not None and feature_extractor.is_window_ready():
-        features = feature_extractor.extract_features()
-        pred = anomaly_model.predict(features)
-        anomaly_score = pred["score"]
-        is_anomaly = pred["is_anomaly"]
-
-    return {
-        **enriched,
-        "anomaly_score": anomaly_score,
-        "is_anomaly": is_anomaly,
-    }
-
-
 # -----------------------------
-# Controls (use real airflow_model methods)
+# WebSocket endpoint
 # -----------------------------
-@app.post("/controls/airflow_obstruction")
-def set_airflow_obstruction(req: AirflowObstructionRequest):
-    airflow_model.set_obstruction(req.ratio)
-    return {"ok": True, "obstruction_ratio": airflow_model.obstruction_ratio}
-
-
-@app.post("/controls/fan_failure")
-def fan_failure():
-    airflow_model.simulate_fan_failure()
-    return {"ok": True, "obstruction_ratio": airflow_model.obstruction_ratio}
-
-
-@app.post("/controls/reset_airflow")
-def reset_airflow():
-    airflow_model.reset()
-    return {"ok": True, "obstruction_ratio": airflow_model.obstruction_ratio}
-
-@app.post("/controls/set_humidity")
-def set_humidity(req: HumiditySetRequest):
-    # clamp 0..100
-    humidity_model.current_humidity = max(0.0, min(100.0, float(req.humidity)))
-    return {"ok": True, "humidity": humidity_model.current_humidity}
-
-
-# -----------------------------
-# ML utility endpoints (nice for frontend)
-# -----------------------------
-@app.get("/ml/status")
-def ml_status():
-    return {
-        "model_loaded": model_loaded,
-        "model_path": MODEL_PATH,
-        "model_load_error": model_load_error,
-        "window_size": feature_extractor.window_size,
-        "window_ready": feature_extractor.is_window_ready(),
-        "points_in_window": len(feature_extractor.window),
-    }
-
-
-@app.post("/ml/reload")
-def ml_reload():
-    """
-    Reload the IsolationForest model from disk (dev convenience).
-    """
-    global anomaly_model, model_loaded, model_load_error
-
+@app.websocket('/ws/simulation')
+async def websocket_simulation(websocket: WebSocket):
+    await websocket.accept()
     try:
-        anomaly_model = AnomalyModel(model_path=MODEL_PATH)
-        model_loaded = True
-        model_load_error = None
-        return {"ok": True, "model_loaded": True}
+        while True:
+            frame = {}
+            for node_id, node_inst in nodes.items():
+                telemetry = node_inst.step()
+                telemetry['node_id'] = node_id
+                # Overwrite/Add numeric timestamp for latency calculation
+                telemetry['timestamp'] = time.time()
+                # Ensure anomaly fields are JSON serializable
+                if telemetry.get('anomaly_score') is None:
+                    telemetry['anomaly_score'] = None
+                frame[node_id] = telemetry
+            await websocket.send_json(frame)
+            await asyncio.sleep(1)
+    except WebSocketDisconnect:
+        print(f'[WS] Client disconnected')
     except Exception as e:
-        anomaly_model = None
-        model_loaded = False
-        model_load_error = str(e)
-        return {"ok": False, "model_loaded": False, "error": model_load_error}
+        print(f'[WS] Error: {e}')
+        await websocket.close()
+
+
+# -----------------------------
+# Injection endpoint
+# -----------------------------
+@app.post('/simulation/inject')
+async def inject_scenario(node_id: str, scenario: str):
+    if node_id not in nodes:
+        return {'error': f'Unknown node: {node_id}'}
+    node_inst = nodes[node_id]
+    if scenario == 'hvac_failure':
+        node_inst.airflow_model.simulate_fan_failure()
+        return {'status': 'injected', 'node': node_id, 
+                'scenario': scenario}
+    elif scenario == 'thermal_spike':
+        node_inst.inject_thermal_spike(duration_seconds=30)
+        return {'status': 'injected', 'node': node_id,
+                'scenario': scenario}
+    elif scenario == 'reset':
+        nodes[node_id] = make_node(
+            node_id, 
+            {'node-1':42,'node-2':43,'node-3':44}[node_id],
+            {'node-1':21.0,'node-2':22.0,'node-3':21.5}[node_id]
+        )
+        return {'status': 'reset', 'node': node_id}
+    return {'error': f'Unknown scenario: {scenario}'}
