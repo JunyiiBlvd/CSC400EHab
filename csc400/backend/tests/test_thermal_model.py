@@ -4,6 +4,8 @@ Unit tests for the ThermalModel class.
 import pytest
 import random
 from backend.simulation.thermal_model import ThermalModel
+from backend.simulation.airflow import AirflowModel
+from backend.simulation.humidity import HumidityModel
 from backend.simulation.node import VirtualNode
 
 # A tolerance for floating point comparisons
@@ -68,8 +70,11 @@ def test_deterministic_output_with_seed():
     """
     def get_run_results(seed):
         """Helper to run simulation and collect results."""
-        thermal_model = ThermalModel(10, 1000, 100, 50, 20, 15)
-        node = VirtualNode("test-node", thermal_model, random_seed=seed)
+        thermal_model = ThermalModel(air_mass=10, heat_capacity=1000, heat_coefficient=100, cooling_coefficient=50, initial_temperature=20, ambient_temperature=15)
+        airflow_model = AirflowModel(nominal_flow=1.0, random_seed=seed)
+        humidity_model = HumidityModel(initial_humidity=45.0, drift=0.0, noise_amplitude=0.0, random_seed=seed)
+        
+        node = VirtualNode("test-node", thermal_model, airflow_model, humidity_model, random_seed=seed)
         results = [node.step() for _ in range(10)]
         return results
 
