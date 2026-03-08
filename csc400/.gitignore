@@ -48,4 +48,8 @@ venv/
 .venv/
 
 # datasets
-datasets/
+
+venv/
+__pycache__/
+*.pyc
+node_modules/

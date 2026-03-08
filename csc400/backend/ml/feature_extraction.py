@@ -16,7 +16,7 @@ class SlidingWindowFeatureExtractor:
         """
         self.window_size = window_size
         self.window = deque(maxlen=window_size)
-        self.variables = ['temperature', 'humidity', 'airflow', 'cpu_load']
+        self.variables = ['temperature', 'airflow', 'humidity', 'cpu_load']
 
     def add_point(self, data: dict):
         """
