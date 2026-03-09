@@ -50,6 +50,12 @@ class VirtualNode:
         # Anomaly Injection State
         self.spike_remaining_steps = 0
         self.cpu_load_override = 0.0
+        self.hvac_lag_steps = 0
+        self._frozen_airflow = None
+        
+        # Anomaly Persistence State
+        self.recent_anomaly_flags = []
+        self.anomaly_persistence_steps = 20
         
         # AR(1) CPU Load State
         self.cpu_load_state = 0.5
@@ -65,15 +71,24 @@ class VirtualNode:
             self.anomaly_model = None
             print(f'[{self.node_id}] Warning: Failed to load model ({e}), anomaly detection disabled')
 
-    def inject_thermal_spike(self, duration_seconds: int):
+    def reset_anomaly_state(self):
+        """Resets the ML feature window and anomaly persistence flags."""
+        self.recent_anomaly_flags = []
+        self.feature_extractor = SlidingWindowFeatureExtractor(window_size=10)
+
+    def inject_thermal_spike(self, duration_seconds: int = 120, lag_seconds: int = 40):
         """
         Manually injects a thermal spike anomaly by overriding CPU load.
 
         Args:
             duration_seconds (int): How many steps the spike should last.
+            lag_seconds (int): How many steps the HVAC should lag (unresponsive).
         """
         self.cpu_load_override = 1.0
         self.spike_remaining_steps = duration_seconds
+        self.hvac_lag_steps = lag_seconds
+        # Reduce airflow to 15% during lag - HVAC not responding
+        self._frozen_airflow = self.airflow_model.current_flow * 0.15
 
     def _generate_cpu_load(self) -> float:
         """
@@ -105,14 +120,15 @@ class VirtualNode:
         4. Temperature changes based on new cooling
         5. Humidity responds to the NEW temperature
         """
-        # Determine if we are currently in an anomaly state BEFORE stepping
-        is_anomaly = self.spike_remaining_steps > 0
-        
         # 1. Generate CPU load
         cpu_load = self._generate_cpu_load()
         
         # 2. Airflow responds to last step's temperature
-        current_airflow = self.airflow_model.step(temperature=self.thermal_model.temperature)
+        if self.hvac_lag_steps > 0:
+            current_airflow = self._frozen_airflow
+            self.hvac_lag_steps -= 1
+        else:
+            current_airflow = self.airflow_model.step(temperature=self.thermal_model.temperature)
         
         # 3. Calculate airflow ratio for cooling efficiency
         airflow_ratio = (
@@ -132,17 +148,24 @@ class VirtualNode:
             "temperature": temperature,
             "humidity": current_humidity,
             "airflow": current_airflow,
-            "cpu_load": cpu_load,
-            "injected_anomaly": is_anomaly
+            "cpu_load": cpu_load
         }
 
         # 6. ML Inference
         self.feature_extractor.add_point(telemetry)
         if self.anomaly_model and self.feature_extractor.is_window_ready():
             features = self.feature_extractor.extract_features()
-            result = self.anomaly_model.predict(features)
-            telemetry['anomaly_score'] = result['anomaly_score']
-            telemetry['is_anomaly'] = result['is_anomaly']
+            ml_result = self.anomaly_model.predict(features)
+            
+            raw_anomaly = ml_result['is_anomaly']
+            self.recent_anomaly_flags.append(raw_anomaly)
+            self.recent_anomaly_flags = (
+                self.recent_anomaly_flags[-self.anomaly_persistence_steps:]
+            )
+            persistent_anomaly = any(self.recent_anomaly_flags)
+            
+            telemetry['anomaly_score'] = ml_result['anomaly_score']
+            telemetry['is_anomaly'] = persistent_anomaly
         else:
             telemetry['anomaly_score'] = None
             telemetry['is_anomaly'] = False

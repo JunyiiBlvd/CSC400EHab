@@ -166,5 +166,6 @@ async def inject_scenario(node_id: str, scenario: str):
         return {"status": "injected", "node": node_id, "scenario": scenario}
     if scenario == "reset":
         nodes[node_id] = make_node(node_id, NODE_SEEDS[node_id], NODE_TEMPS[node_id])
+        nodes[node_id].reset_anomaly_state()
         return {"status": "reset", "node": node_id}
     return {"error": f"Unknown scenario: {scenario}"}

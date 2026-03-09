@@ -46,6 +46,7 @@ class ModelLoader:
         scaled = self.scaler.transform([feature_vector])
         score = self.model.decision_function(scaled)[0]
         is_anomaly = self.model.predict(scaled)[0] == -1
+        
         return {
             "anomaly_score": float(score),
             "is_anomaly": bool(is_anomaly),

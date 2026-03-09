@@ -37,8 +37,39 @@ export default function Home() {
   const prevMlReady = useRef<boolean>(false);
   const draggingObstructionNodeIdRef = useRef<string | null>(null);
   const draggingHumidityNodeIdRef = useRef<string | null>(null);
+  const prevAnomalyRef = useRef<Record<string, boolean>>({});
 
   const selectedTelemetry = telemetryByNode[selectedNodeId] ?? null;
+
+  function getAnomalyReason(telemetry: Telemetry) {
+    const reasons: string[] = [];
+
+    if (telemetry.cpu_load > 0.85) {
+      reasons.push("CPU elevated (" + (telemetry.cpu_load * 100).toFixed(0) + "%)");
+    }
+
+    if (telemetry.temperature > 21.5) {
+      reasons.push("Temperature rising (" + telemetry.temperature.toFixed(2) + "°C)");
+    }
+
+    if (telemetry.airflow < 1.5 && telemetry.airflow > 0.1) {
+      reasons.push("Airflow degraded (" + telemetry.airflow.toFixed(2) + " units)");
+    }
+
+    if (telemetry.airflow <= 0.1) {
+      reasons.push("Airflow critical — possible HVAC failure");
+    }
+
+    if (telemetry.humidity > 55) {
+      reasons.push("Humidity elevated (" + telemetry.humidity.toFixed(1) + "%)");
+    }
+
+    if (reasons.length === 0) {
+      reasons.push("Subtle multi-signal pattern — no single threshold exceeded");
+    }
+
+    return reasons.join(" · ");
+  }
 
   useEffect(() => {
     let socket: WebSocket | null = null;
@@ -175,54 +206,41 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
-    const telemetryList = Object.values(telemetryByNode);
-    if (telemetryList.length === 0) return;
+    const telemetryEntries = Object.entries(telemetryByNode);
+    if (telemetryEntries.length === 0) return;
 
-    setAlerts((prev) => {
-      const next = [...prev];
-      const push = (telemetry: Telemetry, level: AlertItem["level"], message: string) => {
-        next.unshift({
-          id: `${telemetry.timestamp}-${level}-${message}`,
-          ts: telemetry.timestamp,
-          level,
-          message,
+    const newAlerts: AlertItem[] = [];
+
+    for (const [nodeId, telemetry] of telemetryEntries) {
+      const wasAnomaly = prevAnomalyRef.current[nodeId] ?? false;
+      const isAnomaly = telemetry.is_anomaly === true;
+
+      if (!wasAnomaly && isAnomaly) {
+        const reason = getAnomalyReason(telemetry);
+        const scoreStr = typeof telemetry.anomaly_score === 'number'
+          ? telemetry.anomaly_score.toFixed(4) : 'N/A';
+        newAlerts.push({
+          id: 'ml-anomaly-' + nodeId + '-' + telemetry.timestamp,
+          ts: (() => {
+            try {
+              const d = new Date(Number(telemetry.timestamp) * 1000);
+              return isNaN(d.getTime()) ? new Date().toISOString() : d.toISOString();
+            } catch {
+              return new Date().toISOString();
+            }
+          })(),
+          level: 'crit',
+          message: 'ML Anomaly Detected on ' + nodeId.toUpperCase() +
+                   ' | Score: ' + scoreStr + ' | ' + reason,
         });
-      };
-
-      for (const telemetry of telemetryList) {
-        if (telemetry.temperature >= 28) {
-          push(telemetry, "crit", `${telemetry.node_id} temperature CRITICAL (${telemetry.temperature.toFixed(2)} °C)`);
-        } else if (telemetry.temperature >= 24) {
-          push(telemetry, "warn", `${telemetry.node_id} temperature elevated (${telemetry.temperature.toFixed(2)} °C)`);
-        }
-
-        if (telemetry.cpu_load >= 0.9) {
-          push(telemetry, "warn", `${telemetry.node_id} CPU high (${(telemetry.cpu_load * 100).toFixed(1)}%)`);
-        }
-
-        if (telemetry.humidity >= 70) {
-          push(telemetry, "warn", `${telemetry.node_id} humidity high (${telemetry.humidity.toFixed(1)}%)`);
-        } else if (telemetry.humidity <= 20) {
-          push(telemetry, "warn", `${telemetry.node_id} humidity low (${telemetry.humidity.toFixed(1)}%)`);
-        }
-
-        if (telemetry.airflow <= 0.25) {
-          push(telemetry, "crit", `${telemetry.node_id} airflow LOW (${telemetry.airflow.toFixed(2)})`);
-        }
-
-        if (telemetry.is_anomaly === true) {
-          push(
-            telemetry,
-            "crit",
-            `${telemetry.node_id} anomaly detected (score ${
-              typeof telemetry.anomaly_score === "number" ? telemetry.anomaly_score.toFixed(3) : "?"
-            })`
-          );
-        }
       }
 
-      return next.slice(0, 10);
-    });
+      prevAnomalyRef.current[nodeId] = isAnomaly;
+    }
+
+    if (newAlerts.length > 0) {
+      setAlerts((prev) => [...newAlerts, ...prev].slice(0, 10));
+    }
   }, [telemetryByNode]);
 
   const selectedObstructionValue =
