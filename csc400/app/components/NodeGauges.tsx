@@ -12,7 +12,7 @@ export default function NodeGauges({
   nodeId = "node-1",
 }: {
   temperature: number;
-  cpuLoad: number; // 0..1
+  cpuLoad: number; // Range: 0..1
   humidity?: number;
   airflow?: number;
   isAnomaly?: boolean;

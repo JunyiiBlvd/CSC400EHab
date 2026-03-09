@@ -7,9 +7,8 @@ import NodeGrid from "./components/NodeGrid";
 import NodeGauges from "./components/NodeGauges";
 import AlertsFeed from "./components/AlertsFeed";
 
-import type { AlertItem, MlStatus, Telemetry } from "./lib/types";
+import type { AlertItem, HistoryByNode, MlStatus, Telemetry, TelemetryByNode } from "./lib/types";
 import {
-  fetchTelemetryStep,
   fetchMlStatus,
   reloadMlModel,
   resetAirflow,
@@ -19,67 +18,101 @@ import {
 } from "./lib/api";
 
 export default function Home() {
-  const [telemetry, setTelemetry] = useState<Telemetry | null>(null);
+  const [telemetryByNode, setTelemetryByNode] = useState<TelemetryByNode>({});
   const [apiError, setApiError] = useState<string | null>(null);
+  const [selectedNodeId, setSelectedNodeId] = useState<string>("node-1");
 
-  const MAX_POINTS = 300; // ~5 min @ 1Hz
-  const [history, setHistory] = useState<Telemetry[]>([]);
-
+  const MAX_POINTS = 300;
+  const [historyByNode, setHistoryByNode] = useState<HistoryByNode>({});
   const [alerts, setAlerts] = useState<AlertItem[]>([]);
-
   const [obstructionRatio, setObstructionRatio] = useState<number>(0);
   const [controlsError, setControlsError] = useState<string | null>(null);
-
   const [mlStatus, setMlStatus] = useState<MlStatus | null>(null);
   const [mlError, setMlError] = useState<string | null>(null);
-
   const [humiditySet, setHumiditySet] = useState<number>(45);
   const humidityInitialized = useRef(false);
-
-  // Track when ML becomes "ready" so we can optionally emit a one-time alert
   const prevMlReady = useRef<boolean>(false);
 
-  // Poll telemetry once per second
+  const selectedTelemetry = telemetryByNode[selectedNodeId] ?? null;
+
   useEffect(() => {
+    let socket: WebSocket | null = null;
     let cancelled = false;
 
-    async function tick() {
-      try {
-        const data = await fetchTelemetryStep();
+    function connect() {
+      socket = new WebSocket("ws://localhost:8000/ws/simulation");
 
-        if (!cancelled) {
-          setTelemetry(data);
+      socket.onmessage = (event) => {
+        try {
+          const frame = JSON.parse(event.data) as Record<string, Telemetry>;
+          if (cancelled) return;
+
+          const normalizedFrame = Object.fromEntries(
+            Object.entries(frame).map(([nodeId, data]) => {
+              const ts =
+                typeof data.timestamp === "number"
+                  ? new Date(data.timestamp * 1000).toISOString()
+                  : data.timestamp;
+
+              return [
+                nodeId,
+                {
+                  ...data,
+                  node_id: nodeId,
+                  timestamp: ts,
+                },
+              ];
+            })
+          ) as TelemetryByNode;
+
+          setTelemetryByNode(normalizedFrame);
           setApiError(null);
 
-          if (typeof data.obstruction_ratio === "number") {
-            setObstructionRatio(data.obstruction_ratio);
+          const node1 = normalizedFrame["node-1"];
+          if (node1 && typeof node1.obstruction_ratio === "number") {
+            setObstructionRatio(node1.obstruction_ratio);
           }
-
-          if (!humidityInitialized.current && typeof data.humidity === "number") {
-            setHumiditySet(data.humidity);
+          if (!humidityInitialized.current && node1 && typeof node1.humidity === "number") {
+            setHumiditySet(node1.humidity);
             humidityInitialized.current = true;
           }
 
-          setHistory((prev) => {
-            const next = [...prev, data];
-            if (next.length > MAX_POINTS) next.splice(0, next.length - MAX_POINTS);
+          setHistoryByNode((prev) => {
+            const next: HistoryByNode = { ...prev };
+            for (const [nodeId, data] of Object.entries(normalizedFrame)) {
+              const existing = next[nodeId] ?? [];
+              const updated = [...existing, data];
+              if (updated.length > MAX_POINTS) {
+                updated.splice(0, updated.length - MAX_POINTS);
+              }
+              next[nodeId] = updated;
+            }
             return next;
           });
+        } catch (err) {
+          console.error("Bad WS payload", err);
         }
-      } catch (err: any) {
-        if (!cancelled) setApiError(err?.message ?? "Failed to reach backend");
-      }
+      };
+
+      socket.onerror = () => {
+        if (!cancelled) setApiError("WebSocket connection error");
+      };
+
+      socket.onclose = () => {
+        if (!cancelled) {
+          setApiError("WebSocket disconnected");
+          setTimeout(connect, 2000);
+        }
+      };
     }
 
-    tick();
-    const id = setInterval(tick, 1000);
+    connect();
     return () => {
       cancelled = true;
-      clearInterval(id);
+      socket?.close();
     };
   }, []);
 
-  // Poll ML status every 3 seconds
   useEffect(() => {
     let cancelled = false;
 
@@ -90,18 +123,17 @@ export default function Home() {
           setMlStatus(s);
           setMlError(null);
 
-          // One-time "ready" alert when window first becomes ready
           if (!prevMlReady.current && s.window_ready) {
             prevMlReady.current = true;
-            setAlerts((prev) => [
-              {
-                id: `ml-ready-${Date.now()}`,
-                ts: new Date().toISOString(),
-                level: "info" as const,
-                message: `🧠 ML window ready (${s.points_in_window}/${s.window_size}). Anomaly scoring active.`,
-              },
-              ...prev,
-            ].slice(0, 10));
+            
+            const alert: AlertItem = {
+              id: `ml-ready-${Date.now()}`,
+              ts: new Date().toISOString(),
+              level: "info",
+              message: `ML window ready (${s.points_in_window}/${s.window_size}). Anomaly scoring active.`,
+            };
+
+            setAlerts((prev) => [alert, ...prev].slice(0, 10));
           }
           if (!s.window_ready) prevMlReady.current = false;
         }
@@ -118,20 +150,13 @@ export default function Home() {
     };
   }, []);
 
-  // Generate alerts from telemetry
   useEffect(() => {
-    if (!telemetry) return;
-
-    const warnTemp = 24;
-    const critTemp = 28;
-    const warnHumidityHi = 70;
-    const warnHumidityLo = 20;
-    const warnAirflowLow = 0.25;
+    const telemetryList = Object.values(telemetryByNode);
+    if (telemetryList.length === 0) return;
 
     setAlerts((prev) => {
       const next = [...prev];
-
-      const push = (level: AlertItem["level"], message: string) => {
+      const push = (telemetry: Telemetry, level: AlertItem["level"], message: string) => {
         next.unshift({
           id: `${telemetry.timestamp}-${level}-${message}`,
           ts: telemetry.timestamp,
@@ -140,53 +165,48 @@ export default function Home() {
         });
       };
 
-      if (telemetry.temperature >= critTemp) {
-        push("crit", `🔥 ${telemetry.node_id} temperature CRITICAL (${telemetry.temperature.toFixed(2)} °C)`);
-      } else if (telemetry.temperature >= warnTemp) {
-        push("warn", `⚠️ ${telemetry.node_id} temperature elevated (${telemetry.temperature.toFixed(2)} °C)`);
-      }
-
-      if (telemetry.cpu_load >= 0.9) {
-        push("warn", `📈 ${telemetry.node_id} CPU high (${(telemetry.cpu_load * 100).toFixed(1)}%)`);
-      }
-
-      if (typeof telemetry.humidity === "number") {
-        if (telemetry.humidity >= warnHumidityHi) {
-          push("warn", `💧 ${telemetry.node_id} humidity high (${telemetry.humidity.toFixed(1)}%)`);
-        } else if (telemetry.humidity <= warnHumidityLo) {
-          push("warn", `🌵 ${telemetry.node_id} humidity low (${telemetry.humidity.toFixed(1)}%)`);
+      for (const telemetry of telemetryList) {
+        if (telemetry.temperature >= 28) {
+          push(telemetry, "crit", `${telemetry.node_id} temperature CRITICAL (${telemetry.temperature.toFixed(2)} °C)`);
+        } else if (telemetry.temperature >= 24) {
+          push(telemetry, "warn", `${telemetry.node_id} temperature elevated (${telemetry.temperature.toFixed(2)} °C)`);
         }
-      }
 
-      if (typeof telemetry.airflow === "number" && telemetry.airflow <= warnAirflowLow) {
-        push("crit", `🌀 ${telemetry.node_id} airflow LOW (${telemetry.airflow.toFixed(2)})`);
-      }
+        if (telemetry.cpu_load >= 0.9) {
+          push(telemetry, "warn", `${telemetry.node_id} CPU high (${(telemetry.cpu_load * 100).toFixed(1)}%)`);
+        }
 
-      if (telemetry.is_anomaly === true) {
-        push(
-          "crit",
-          `🤖 ${telemetry.node_id} anomaly detected (score ${
-            typeof telemetry.anomaly_score === "number" ? telemetry.anomaly_score.toFixed(3) : "?"
-          })`
-        );
+        if (telemetry.humidity >= 70) {
+          push(telemetry, "warn", `${telemetry.node_id} humidity high (${telemetry.humidity.toFixed(1)}%)`);
+        } else if (telemetry.humidity <= 20) {
+          push(telemetry, "warn", `${telemetry.node_id} humidity low (${telemetry.humidity.toFixed(1)}%)`);
+        }
+
+        if (telemetry.airflow <= 0.25) {
+          push(telemetry, "crit", `${telemetry.node_id} airflow LOW (${telemetry.airflow.toFixed(2)})`);
+        }
+
+        if (telemetry.is_anomaly === true) {
+          push(
+            telemetry,
+            "crit",
+            `${telemetry.node_id} anomaly detected (score ${
+              typeof telemetry.anomaly_score === "number" ? telemetry.anomaly_score.toFixed(3) : "?"
+            })`
+          );
+        }
       }
 
       return next.slice(0, 10);
     });
-  }, [telemetry]);
+  }, [telemetryByNode]);
 
-  const node1Text = useMemo(() => {
+  const summaryText = useMemo(() => {
     if (apiError) return `Backend offline: ${apiError}`;
-    if (!telemetry) return "Waiting for telemetry...";
-
-    const extras: string[] = [];
-    if (typeof telemetry.humidity === "number") extras.push(`Hum: ${telemetry.humidity.toFixed(1)}%`);
-    if (typeof telemetry.airflow === "number") extras.push(`Air: ${telemetry.airflow.toFixed(2)}`);
-    if (telemetry.is_anomaly === true) extras.push("ANOMALY");
-
-    const extraText = extras.length ? ` · ${extras.join(" · ")}` : "";
-    return `Temp: ${telemetry.temperature.toFixed(2)} °C · CPU: ${(telemetry.cpu_load * 100).toFixed(1)}%${extraText}`;
-  }, [telemetry, apiError]);
+    const count = Object.keys(telemetryByNode).length;
+    if (count === 0) return "Waiting for telemetry...";
+    return `${count} nodes streaming`;
+  }, [telemetryByNode, apiError]);
 
   async function applyObstruction(ratio: number) {
     try {
@@ -219,14 +239,14 @@ export default function Home() {
   }
 
   async function applyHumidity(h: number) {
-  try {
-    setControlsError(null);
-    const res = await setHumidity(h);
-    setHumiditySet(res.humidity);
-  } catch (e: any) {
-    setControlsError(e?.message ?? "Failed to update humidity");
+    try {
+      setControlsError(null);
+      const res = await setHumidity(h);
+      setHumiditySet(res.humidity);
+    } catch (e: any) {
+      setControlsError(e?.message ?? "Failed to update humidity");
+    }
   }
-}
 
   async function doReloadMl() {
     try {
@@ -240,14 +260,13 @@ export default function Home() {
     }
   }
 
-  const anomalyChip =
-    telemetry?.is_anomaly === true ? (
-      <Chip label="ANOMALY" color="error" size="small" />
-    ) : mlStatus?.window_ready ? (
-      <Chip label="ML Ready" color="success" size="small" />
-    ) : (
-      <Chip label="ML Warming" color="warning" size="small" />
-    );
+  const anomalyChip = selectedTelemetry?.is_anomaly === true ? (
+    <Chip label="ANOMALY" color="error" size="small" />
+  ) : mlStatus?.window_ready ? (
+    <Chip label="ML Ready" color="success" size="small" />
+  ) : (
+    <Chip label="ML Warming" color="warning" size="small" />
+  );
 
   return (
     <Box sx={{ minHeight: "100vh", bgcolor: "#0b1220", color: "white", p: 3 }}>
@@ -256,6 +275,9 @@ export default function Home() {
           E-Habitat Dashboard
         </Typography>
         {anomalyChip}
+        <Typography variant="body2" sx={{ opacity: 0.75 }}>
+          {summaryText}
+        </Typography>
       </Box>
 
       <Box sx={{ display: "grid", gridTemplateColumns: "320px 1fr", gap: 2 }}>
@@ -263,9 +285,8 @@ export default function Home() {
           <Typography variant="h6" sx={{ mb: 1 }}>
             Controls Panel
           </Typography>
-
           <Typography variant="body2" sx={{ opacity: 0.7 }}>
-            Inject conditions and observe telemetry + ML detection.
+            Controls currently apply to all 3 nodes.
           </Typography>
 
           <Box sx={{ mt: 2 }}>
@@ -273,15 +294,31 @@ export default function Home() {
               API status
             </Typography>
             <Typography variant="body2" sx={{ mt: 0.5 }}>
-              {apiError ? "❌ Disconnected" : telemetry ? "✅ Connected" : "⏳ Connecting..."}
+              {apiError ? "Disconnected" : Object.keys(telemetryByNode).length ? "Connected" : "Connecting..."}
             </Typography>
+          </Box>
+
+          <Box sx={{ mt: 3 }}>
+            <Typography variant="caption" sx={{ opacity: 0.7 }}>
+              Focus node
+            </Typography>
+            <Stack direction="row" spacing={1} sx={{ mt: 1, flexWrap: "wrap" }}>
+              {["node-1", "node-2", "node-3"].map((nodeId) => (
+                <Button
+                  key={nodeId}
+                  variant={selectedNodeId === nodeId ? "contained" : "outlined"}
+                  onClick={() => setSelectedNodeId(nodeId)}
+                >
+                  {nodeId}
+                </Button>
+              ))}
+            </Stack>
           </Box>
 
           <Box sx={{ mt: 3 }}>
             <Typography variant="caption" sx={{ opacity: 0.7 }}>
               Airflow obstruction (0 = none, 1 = fully blocked)
             </Typography>
-
             <Slider
               value={obstructionRatio}
               min={0}
@@ -291,35 +328,28 @@ export default function Home() {
               onChangeCommitted={(_, v) => applyObstruction(v as number)}
               sx={{ mt: 1 }}
             />
-
             <Stack direction="row" spacing={1} sx={{ mt: 1 }}>
-              <Button variant="contained" onClick={doFanFailure}>
-                Fan failure
-              </Button>
-              <Button variant="outlined" onClick={doResetAirflow}>
-                Reset airflow
-              </Button>
+              <Button variant="contained" onClick={doFanFailure}>Fan failure</Button>
+              <Button variant="outlined" onClick={doResetAirflow}>Reset airflow</Button>
             </Stack>
+          </Box>
 
-            <Box sx={{ mt: 3 }}>
-              <Typography variant="caption" sx={{ opacity: 0.7 }}>
-                Humidity (%)
-              </Typography>
-
-              <Slider
-                value={humiditySet}
-                min={0}
-                max={100}
-                step={1}
-                onChange={(_, v) => setHumiditySet(v as number)}
-                onChangeCommitted={(_, v) => applyHumidity(v as number)}
-                sx={{ mt: 1 }}
-              />
-            </Box>
-
+          <Box sx={{ mt: 3 }}>
+            <Typography variant="caption" sx={{ opacity: 0.7 }}>
+              Humidity (%)
+            </Typography>
+            <Slider
+              value={humiditySet}
+              min={0}
+              max={100}
+              step={1}
+              onChange={(_, v) => setHumiditySet(v as number)}
+              onChangeCommitted={(_, v) => applyHumidity(v as number)}
+              sx={{ mt: 1 }}
+            />
             {controlsError && (
               <Typography variant="body2" sx={{ mt: 1, opacity: 0.85 }}>
-                ⚠️ {controlsError}
+                {controlsError}
               </Typography>
             )}
           </Box>
@@ -328,29 +358,25 @@ export default function Home() {
             <Typography variant="caption" sx={{ opacity: 0.7 }}>
               ML status
             </Typography>
-
             <Typography variant="body2" sx={{ mt: 0.5 }}>
               {!mlStatus
-                ? "⏳ Loading..."
+                ? "Loading..."
                 : mlStatus.model_loaded
-                ? `✅ Model loaded · window ${mlStatus.points_in_window}/${mlStatus.window_size}${
+                ? `Model loaded · window ${mlStatus.points_in_window}/${mlStatus.window_size}${
                     mlStatus.window_ready ? " · ready" : " · warming up"
                   }`
-                : `❌ Model not loaded`}
+                : "Model not loaded"}
             </Typography>
-
             {mlStatus?.model_load_error && (
               <Typography variant="body2" sx={{ mt: 1, opacity: 0.85 }}>
-                ⚠️ {mlStatus.model_load_error}
+                {mlStatus.model_load_error}
               </Typography>
             )}
-
             {mlError && (
               <Typography variant="body2" sx={{ mt: 1, opacity: 0.85 }}>
-                ⚠️ {mlError}
+                {mlError}
               </Typography>
             )}
-
             <Button variant="outlined" onClick={doReloadMl} sx={{ mt: 1 }}>
               Reload ML model
             </Button>
@@ -358,14 +384,14 @@ export default function Home() {
         </Paper>
 
         <Box sx={{ display: "grid", gap: 2 }}>
-          {telemetry && (
+          {selectedTelemetry && (
             <NodeGauges
-              temperature={telemetry.temperature}
-              cpuLoad={telemetry.cpu_load}
-              humidity={telemetry.humidity}
-              airflow={telemetry.airflow}
-              isAnomaly={telemetry.is_anomaly === true}
-              nodeId={telemetry.node_id}
+              temperature={selectedTelemetry.temperature}
+              cpuLoad={selectedTelemetry.cpu_load}
+              humidity={selectedTelemetry.humidity}
+              airflow={selectedTelemetry.airflow}
+              isAnomaly={selectedTelemetry.is_anomaly === true}
+              nodeId={selectedTelemetry.node_id}
             />
           )}
 
@@ -374,11 +400,11 @@ export default function Home() {
           <Paper sx={panelStyle}>
             <Typography variant="h6">Central vs Edge Comparison</Typography>
             <Typography variant="body2" sx={{ opacity: 0.7 }}>
-              Latency + message volume metrics go here.
+              Placeholder for latency + message volume metrics.
             </Typography>
           </Paper>
 
-          <NodeGrid telemetry={telemetry} apiError={apiError} node1Text={node1Text} history={history} />
+          <NodeGrid telemetryByNode={telemetryByNode} apiError={apiError} historyByNode={historyByNode} />
         </Box>
       </Box>
     </Box>

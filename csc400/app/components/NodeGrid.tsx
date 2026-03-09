@@ -2,100 +2,67 @@
 
 import { Box, Paper, Typography, Chip } from "@mui/material";
 import Sparkline from "./Sparkline";
-import type { Telemetry } from "../lib/types";
+import type { HistoryByNode, TelemetryByNode } from "../lib/types";
 
 type NodeGridProps = {
-  telemetry: Telemetry | null;
+  telemetryByNode: TelemetryByNode;
   apiError: string | null;
-  node1Text: string;
-  history: Telemetry[];
+  historyByNode: HistoryByNode;
 };
 
-export default function NodeGrid({ telemetry, apiError, node1Text, history }: NodeGridProps) {
-  const isAnomaly = telemetry?.is_anomaly === true;
+export default function NodeGrid({ telemetryByNode, apiError, historyByNode }: NodeGridProps) {
+  const nodeIds = ["node-1", "node-2", "node-3"];
 
   return (
     <Box sx={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 2 }}>
-      {[1, 2, 3].map((node) => (
-        <Paper key={node} sx={panelStyle}>
-          <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-            <Typography variant="h6">Node {node}</Typography>
-            {node === 1 && telemetry ? (
-              isAnomaly ? (
-                <Chip label="ANOMALY" color="error" size="small" />
-              ) : (
-                <Chip label="OK" color="success" size="small" />
-              )
-            ) : null}
-          </Box>
+      {nodeIds.map((nodeId, index) => {
+        const telemetry = telemetryByNode[nodeId];
+        const history = historyByNode[nodeId] ?? [];
+        const isAnomaly = telemetry?.is_anomaly === true;
 
-          <Typography variant="body2" sx={{ opacity: 0.7, mt: 0.5 }}>
-            {node === 1 ? node1Text : apiError ? "Backend offline (no data)" : "Temperature / Humidity / Airflow"}
-          </Typography>
-
-          {node === 1 && telemetry && (
-            <Typography variant="caption" sx={{ display: "block", opacity: 0.6, mt: 1 }}>
-              Last update: {new Date(telemetry.timestamp).toLocaleTimeString()}
-            </Typography>
-          )}
-
-          {node === 1 && history.length > 5 && (
-            <Box sx={{ mt: 1 }}>
-              <Typography variant="caption" sx={{ opacity: 0.7 }}>
-                Temperature trend
-              </Typography>
-              <Sparkline points={history.map((p) => ({ t: Date.parse(p.timestamp), v: p.temperature }))} />
-
-              <Typography variant="caption" sx={{ opacity: 0.7 }}>
-                CPU trend
-              </Typography>
-              <Sparkline points={history.map((p) => ({ t: Date.parse(p.timestamp), v: p.cpu_load }))} />
-
-              {history.some((p) => typeof p.humidity === "number") && (
-                <>
-                  <Typography variant="caption" sx={{ opacity: 0.7 }}>
-                    Humidity trend
-                  </Typography>
-                  <Sparkline
-                    points={history.map((p) => ({
-                      t: Date.parse(p.timestamp),
-                      v: typeof p.humidity === "number" ? p.humidity : 0,
-                    }))}
-                  />
-                </>
-              )}
-
-              {history.some((p) => typeof p.airflow === "number") && (
-                <>
-                  <Typography variant="caption" sx={{ opacity: 0.7 }}>
-                    Airflow trend
-                  </Typography>
-                  <Sparkline
-                    points={history.map((p) => ({
-                      t: Date.parse(p.timestamp),
-                      v: typeof p.airflow === "number" ? p.airflow : 0,
-                    }))}
-                  />
-                </>
-              )}
-
-              {history.some((p) => typeof p.anomaly_score === "number") && (
-                <>
-                  <Typography variant="caption" sx={{ opacity: 0.7 }}>
-                    Anomaly score
-                  </Typography>
-                  <Sparkline
-                    points={history.map((p) => ({
-                      t: Date.parse(p.timestamp),
-                      v: typeof p.anomaly_score === "number" ? p.anomaly_score : 0,
-                    }))}
-                  />
-                </>
-              )}
+        return (
+          <Paper key={nodeId} sx={panelStyle}>
+            <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+              <Typography variant="h6">Node {index + 1}</Typography>
+              {telemetry ? (
+                isAnomaly ? (
+                  <Chip label="ANOMALY" color="error" size="small" />
+                ) : (
+                  <Chip label="OK" color="success" size="small" />
+                )
+              ) : null}
             </Box>
-          )}
-        </Paper>
-      ))}
+
+            <Typography variant="body2" sx={{ opacity: 0.7, mt: 0.5 }}>
+              {apiError
+                ? "Backend offline (no data)"
+                : telemetry
+                ? `Temp: ${telemetry.temperature.toFixed(2)} °C · CPU: ${(telemetry.cpu_load * 100).toFixed(1)}% · Hum: ${telemetry.humidity.toFixed(1)}% · Air: ${telemetry.airflow.toFixed(2)}`
+                : "Waiting for telemetry..."}
+            </Typography>
+
+            {telemetry && (
+              <Typography variant="caption" sx={{ display: "block", opacity: 0.6, mt: 1 }}>
+                Last update: {new Date(telemetry.timestamp).toLocaleTimeString()}
+              </Typography>
+            )}
+
+            {history.length > 5 && (
+              <Box sx={{ mt: 1 }}>
+                <Typography variant="caption" sx={{ opacity: 0.7 }}>
+                  Temperature trend
+                </Typography>
+                <Sparkline points={history.map((p) => ({ t: Date.parse(p.timestamp), v: p.temperature }))} />
+
+                <Typography variant="caption" sx={{ opacity: 0.7 }}>
+                  CPU trend
+                </Typography>
+                <Sparkline points={history.map((p) => ({ t: Date.parse(p.timestamp), v: p.cpu_load }))} />
+              </Box>
+            )}
+          </Paper>
+        );
+      })}
     </Box>
   );
 }
