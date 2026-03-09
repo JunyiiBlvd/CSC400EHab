@@ -1,60 +1,91 @@
-import type { MlStatus, Telemetry } from "./types";
+import type { MlStatus } from "./types";
 
-export async function fetchTelemetryStep(): Promise<Telemetry> {
-  // Prefer env_step
-  const envRes = await fetch("/api/telemetry/env_step", { cache: "no-store" });
-  if (envRes.ok) return (await envRes.json()) as Telemetry;
+const API_BASE = "http://localhost:8000";
 
-  // Fall back to legacy step (in case env_step breaks)
-  const legacyRes = await fetch("/api/telemetry/step", { cache: "no-store" });
-  if (!legacyRes.ok) throw new Error(`API error ${envRes.status}/${legacyRes.status}`);
-  return (await legacyRes.json()) as Telemetry;
-}
+type NodeControlResponse = {
+  ok: true;
+  node_id: string;
+};
 
 export async function setAirflowObstruction(
+  nodeId: string,
   ratio: number
-): Promise<{ ok: true; obstruction_ratio: number }> {
-  const res = await fetch("/api/controls/airflow_obstruction", {
+): Promise<NodeControlResponse & { obstruction_ratio: number }> {
+  const res = await fetch(`${API_BASE}/api/controls/airflow_obstruction`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ ratio }),
+    body: JSON.stringify({ node_id: nodeId, ratio }),
   });
   if (!res.ok) throw new Error(`API error ${res.status}`);
-  return (await res.json()) as { ok: true; obstruction_ratio: number };
+  return (await res.json()) as NodeControlResponse & { obstruction_ratio: number };
 }
 
-export async function simulateFanFailure(): Promise<{ ok: true; obstruction_ratio: number }> {
-  const res = await fetch("/api/controls/fan_failure", { method: "POST" });
+export async function simulateFanFailure(
+  nodeId: string
+): Promise<NodeControlResponse & { obstruction_ratio: number }> {
+  const res = await fetch(`${API_BASE}/api/controls/fan_failure`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ node_id: nodeId }),
+  });
   if (!res.ok) throw new Error(`API error ${res.status}`);
-  return (await res.json()) as { ok: true; obstruction_ratio: number };
+  return (await res.json()) as NodeControlResponse & { obstruction_ratio: number };
 }
 
-export async function resetAirflow(): Promise<{ ok: true; obstruction_ratio: number }> {
-  const res = await fetch("/api/controls/reset_airflow", { method: "POST" });
+export async function resetAirflow(
+  nodeId: string
+): Promise<NodeControlResponse & { obstruction_ratio: number }> {
+  const res = await fetch(`${API_BASE}/api/controls/reset_airflow`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ node_id: nodeId }),
+  });
   if (!res.ok) throw new Error(`API error ${res.status}`);
-  return (await res.json()) as { ok: true; obstruction_ratio: number };
+  return (await res.json()) as NodeControlResponse & { obstruction_ratio: number };
 }
 
 export async function setHumidity(
+  nodeId: string,
   humidity: number
-): Promise<{ ok: true; humidity: number }> {
-  const res = await fetch("/api/controls/set_humidity", {
+): Promise<NodeControlResponse & { humidity: number }> {
+  const res = await fetch(`${API_BASE}/api/controls/set_humidity`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ humidity }),
+    body: JSON.stringify({ node_id: nodeId, humidity }),
   });
   if (!res.ok) throw new Error(`API error ${res.status}`);
-  return (await res.json()) as { ok: true; humidity: number };
+  return (await res.json()) as NodeControlResponse & { humidity: number };
 }
 
 export async function fetchMlStatus(): Promise<MlStatus> {
-  const res = await fetch("/api/ml/status", { cache: "no-store" });
-  if (!res.ok) throw new Error(`ML status error ${res.status}`);
+  const res = await fetch(`${API_BASE}/api/ml/status`, { cache: "no-store" });
+  if (!res.ok) throw new Error(`API error ${res.status}`);
   return (await res.json()) as MlStatus;
 }
 
-export async function reloadMlModel(): Promise<{ ok: boolean; model_loaded: boolean; error?: string }> {
-  const res = await fetch("/api/ml/reload", { method: "POST" });
-  if (!res.ok) throw new Error(`ML reload error ${res.status}`);
-  return (await res.json()) as { ok: boolean; model_loaded: boolean; error?: string };
+export async function reloadMlModel(): Promise<{
+  ok: boolean;
+  model_loaded: boolean;
+  error?: string | null;
+}> {
+  const res = await fetch(`${API_BASE}/api/ml/reload`, { method: "POST" });
+  if (!res.ok) throw new Error(`API error ${res.status}`);
+  return (await res.json()) as { ok: boolean; model_loaded: boolean; error?: string | null };
+}
+
+export async function injectThermalSpike(
+  nodeId: string
+): Promise<{ status: string; node: string; scenario: string }> {
+  const params = new URLSearchParams({
+    node_id: nodeId,
+    scenario: "thermal_spike",
+  });
+
+  const res = await fetch(`${API_BASE}/simulation/inject?${params.toString()}`, {
+    method: "POST",
+  });
+
+  if (!res.ok) throw new Error(`API error ${res.status}`);
+
+  return (await res.json()) as { status: string; node: string; scenario: string };
 }

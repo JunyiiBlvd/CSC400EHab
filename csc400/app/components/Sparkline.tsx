@@ -1,8 +1,8 @@
 "use client";
 
 export type SparkPoint = {
-  t: number;     // time in ms since epoch (Date.now())
-  v: number;     // value
+  t: number;     // Time in ms since epoch (Date.now())
+  v: number;     // Value
 };
 
 export default function Sparkline({
