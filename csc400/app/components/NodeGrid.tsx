@@ -8,9 +8,17 @@ type NodeGridProps = {
   telemetryByNode: TelemetryByNode;
   apiError: string | null;
   historyByNode: HistoryByNode;
+  selectedNodeId: string;
+  onSelectNode: (nodeId: string) => void;
 };
 
-export default function NodeGrid({ telemetryByNode, apiError, historyByNode }: NodeGridProps) {
+export default function NodeGrid({
+  telemetryByNode,
+  apiError,
+  historyByNode,
+  selectedNodeId,
+  onSelectNode,
+}: NodeGridProps) {
   const nodeIds = ["node-1", "node-2", "node-3"];
 
   return (
@@ -19,18 +27,26 @@ export default function NodeGrid({ telemetryByNode, apiError, historyByNode }: N
         const telemetry = telemetryByNode[nodeId];
         const history = historyByNode[nodeId] ?? [];
         const isAnomaly = telemetry?.is_anomaly === true;
+        const isSelected = nodeId === selectedNodeId;
 
         return (
-          <Paper key={nodeId} sx={panelStyle}>
+          <Paper
+            key={nodeId}
+            sx={{
+              ...panelStyle,
+              cursor: "pointer",
+              border: isSelected
+                ? "1px solid rgba(144,202,249,0.85)"
+                : "1px solid rgba(255,255,255,0.12)",
+              boxShadow: isSelected ? "0 0 0 1px rgba(144,202,249,0.45) inset" : "none",
+            }}
+            onClick={() => onSelectNode(nodeId)}
+          >
             <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
               <Typography variant="h6">Node {index + 1}</Typography>
-              {telemetry ? (
-                isAnomaly ? (
-                  <Chip label="ANOMALY" color="error" size="small" />
-                ) : (
-                  <Chip label="OK" color="success" size="small" />
-                )
-              ) : null}
+              <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+                {isSelected ? <Chip label="SELECTED" color="primary" size="small" /> : null}
+              </Box>
             </Box>
 
             <Typography variant="body2" sx={{ opacity: 0.7, mt: 0.5 }}>

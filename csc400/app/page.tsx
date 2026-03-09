@@ -15,32 +15,42 @@ import {
   setAirflowObstruction,
   simulateFanFailure,
   setHumidity,
+  injectThermalSpike,
 } from "./lib/api";
+
+const NODE_IDS = ["node-1", "node-2", "node-3"] as const;
+const MAX_POINTS = 300;
 
 export default function Home() {
   const [telemetryByNode, setTelemetryByNode] = useState<TelemetryByNode>({});
   const [apiError, setApiError] = useState<string | null>(null);
   const [selectedNodeId, setSelectedNodeId] = useState<string>("node-1");
-
-  const MAX_POINTS = 300;
   const [historyByNode, setHistoryByNode] = useState<HistoryByNode>({});
   const [alerts, setAlerts] = useState<AlertItem[]>([]);
-  const [obstructionRatio, setObstructionRatio] = useState<number>(0);
   const [controlsError, setControlsError] = useState<string | null>(null);
   const [mlStatus, setMlStatus] = useState<MlStatus | null>(null);
   const [mlError, setMlError] = useState<string | null>(null);
-  const [humiditySet, setHumiditySet] = useState<number>(45);
-  const humidityInitialized = useRef(false);
+  const [obstructionDraftByNode, setObstructionDraftByNode] = useState<Record<string, number>>({});
+  const [humidityDraftByNode, setHumidityDraftByNode] = useState<Record<string, number>>({});
+  const [draggingObstructionNodeId, setDraggingObstructionNodeId] = useState<string | null>(null);
+  const [draggingHumidityNodeId, setDraggingHumidityNodeId] = useState<string | null>(null);
   const prevMlReady = useRef<boolean>(false);
+  const draggingObstructionNodeIdRef = useRef<string | null>(null);
+  const draggingHumidityNodeIdRef = useRef<string | null>(null);
 
   const selectedTelemetry = telemetryByNode[selectedNodeId] ?? null;
 
   useEffect(() => {
     let socket: WebSocket | null = null;
     let cancelled = false;
+    let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 
     function connect() {
       socket = new WebSocket("ws://localhost:8000/ws/simulation");
+
+      socket.onopen = () => {
+        if (!cancelled) setApiError(null);
+      };
 
       socket.onmessage = (event) => {
         try {
@@ -68,14 +78,25 @@ export default function Home() {
           setTelemetryByNode(normalizedFrame);
           setApiError(null);
 
-          const node1 = normalizedFrame["node-1"];
-          if (node1 && typeof node1.obstruction_ratio === "number") {
-            setObstructionRatio(node1.obstruction_ratio);
-          }
-          if (!humidityInitialized.current && node1 && typeof node1.humidity === "number") {
-            setHumiditySet(node1.humidity);
-            humidityInitialized.current = true;
-          }
+          setObstructionDraftByNode((prev) => {
+            const next = { ...prev };
+            for (const [nodeId, data] of Object.entries(normalizedFrame)) {
+              if (draggingObstructionNodeIdRef.current !== nodeId) {
+                next[nodeId] = data.obstruction_ratio;
+              }
+            }
+            return next;
+          });
+
+          setHumidityDraftByNode((prev) => {
+            const next = { ...prev };
+            for (const [nodeId, data] of Object.entries(normalizedFrame)) {
+              if (draggingHumidityNodeIdRef.current !== nodeId) {
+                next[nodeId] = data.humidity;
+              }
+            }
+            return next;
+          });
 
           setHistoryByNode((prev) => {
             const next: HistoryByNode = { ...prev };
@@ -101,7 +122,7 @@ export default function Home() {
       socket.onclose = () => {
         if (!cancelled) {
           setApiError("WebSocket disconnected");
-          setTimeout(connect, 2000);
+          reconnectTimer = setTimeout(connect, 2000);
         }
       };
     }
@@ -109,6 +130,7 @@ export default function Home() {
     connect();
     return () => {
       cancelled = true;
+      if (reconnectTimer) clearTimeout(reconnectTimer);
       socket?.close();
     };
   }, []);
@@ -125,7 +147,7 @@ export default function Home() {
 
           if (!prevMlReady.current && s.window_ready) {
             prevMlReady.current = true;
-            
+
             const alert: AlertItem = {
               id: `ml-ready-${Date.now()}`,
               ts: new Date().toISOString(),
@@ -137,8 +159,10 @@ export default function Home() {
           }
           if (!s.window_ready) prevMlReady.current = false;
         }
-      } catch (e: any) {
-        if (!cancelled) setMlError(e?.message ?? "Failed to load ML status");
+      } catch (e: unknown) {
+        if (!cancelled) {
+          setMlError(e instanceof Error ? e.message : "Failed to load ML status");
+        }
       }
     }
 
@@ -201,6 +225,10 @@ export default function Home() {
     });
   }, [telemetryByNode]);
 
+  const selectedObstructionValue =
+    obstructionDraftByNode[selectedNodeId] ?? selectedTelemetry?.obstruction_ratio ?? 0;
+  const selectedHumidityValue = humidityDraftByNode[selectedNodeId] ?? selectedTelemetry?.humidity ?? 45;
+
   const summaryText = useMemo(() => {
     if (apiError) return `Backend offline: ${apiError}`;
     const count = Object.keys(telemetryByNode).length;
@@ -208,43 +236,51 @@ export default function Home() {
     return `${count} nodes streaming`;
   }, [telemetryByNode, apiError]);
 
-  async function applyObstruction(ratio: number) {
+  async function applyObstruction(nodeId: string, ratio: number) {
     try {
       setControlsError(null);
-      const res = await setAirflowObstruction(ratio);
-      setObstructionRatio(res.obstruction_ratio);
-    } catch (e: any) {
-      setControlsError(e?.message ?? "Failed to update airflow obstruction");
+      setObstructionDraftByNode((prev) => ({ ...prev, [nodeId]: ratio }));
+      const res = await setAirflowObstruction(nodeId, ratio);
+      setObstructionDraftByNode((prev) => ({ ...prev, [nodeId]: res.obstruction_ratio }));
+    } catch (e: unknown) {
+      setControlsError(e instanceof Error ? e.message : "Failed to update airflow obstruction");
+    } finally {
+      draggingObstructionNodeIdRef.current = null;
+      setDraggingObstructionNodeId(null);
     }
   }
 
   async function doFanFailure() {
     try {
       setControlsError(null);
-      const res = await simulateFanFailure();
-      setObstructionRatio(res.obstruction_ratio);
-    } catch (e: any) {
-      setControlsError(e?.message ?? "Failed to simulate fan failure");
+      const res = await simulateFanFailure(selectedNodeId);
+      setObstructionDraftByNode((prev) => ({ ...prev, [selectedNodeId]: res.obstruction_ratio }));
+    } catch (e: unknown) {
+      setControlsError(e instanceof Error ? e.message : "Failed to simulate fan failure");
     }
   }
 
   async function doResetAirflow() {
     try {
       setControlsError(null);
-      const res = await resetAirflow();
-      setObstructionRatio(res.obstruction_ratio);
-    } catch (e: any) {
-      setControlsError(e?.message ?? "Failed to reset airflow");
+      const res = await resetAirflow(selectedNodeId);
+      setObstructionDraftByNode((prev) => ({ ...prev, [selectedNodeId]: res.obstruction_ratio }));
+    } catch (e: unknown) {
+      setControlsError(e instanceof Error ? e.message : "Failed to reset airflow");
     }
   }
 
-  async function applyHumidity(h: number) {
+  async function applyHumidity(nodeId: string, humidity: number) {
     try {
       setControlsError(null);
-      const res = await setHumidity(h);
-      setHumiditySet(res.humidity);
-    } catch (e: any) {
-      setControlsError(e?.message ?? "Failed to update humidity");
+      setHumidityDraftByNode((prev) => ({ ...prev, [nodeId]: humidity }));
+      const res = await setHumidity(nodeId, humidity);
+      setHumidityDraftByNode((prev) => ({ ...prev, [nodeId]: res.humidity }));
+    } catch (e: unknown) {
+      setControlsError(e instanceof Error ? e.message : "Failed to update humidity");
+    } finally {
+      draggingHumidityNodeIdRef.current = null;
+      setDraggingHumidityNodeId(null);
     }
   }
 
@@ -255,8 +291,26 @@ export default function Home() {
       if (!r.ok) setMlError(r.error ?? "Reload failed");
       const s = await fetchMlStatus();
       setMlStatus(s);
-    } catch (e: any) {
-      setMlError(e?.message ?? "Failed to reload ML model");
+    } catch (e: unknown) {
+      setMlError(e instanceof Error ? e.message : "Failed to reload ML model");
+    }
+  }
+
+  async function doThermalSpike() {
+    try {
+      setControlsError(null);
+      await injectThermalSpike(selectedNodeId);
+
+      const alertThermal: AlertItem = {
+        id: `thermal-spike-${selectedNodeId}-${Date.now()}`,
+        ts: new Date().toISOString(),
+        level: "warn" as const,
+        message: `Thermal spike injected on ${selectedNodeId}`,
+      };
+
+      setAlerts((prev) => [alertThermal, ...prev].slice(0, 10));
+    } catch (e: unknown) {
+      setControlsError(e instanceof Error ? e.message : "Failed to inject thermal spike");
     }
   }
 
@@ -286,7 +340,7 @@ export default function Home() {
             Controls Panel
           </Typography>
           <Typography variant="body2" sx={{ opacity: 0.7 }}>
-            Controls currently apply to all 3 nodes.
+            Controls apply only to the currently selected node.
           </Typography>
 
           <Box sx={{ mt: 2 }}>
@@ -303,7 +357,7 @@ export default function Home() {
               Focus node
             </Typography>
             <Stack direction="row" spacing={1} sx={{ mt: 1, flexWrap: "wrap" }}>
-              {["node-1", "node-2", "node-3"].map((nodeId) => (
+              {NODE_IDS.map((nodeId) => (
                 <Button
                   key={nodeId}
                   variant={selectedNodeId === nodeId ? "contained" : "outlined"}
@@ -315,19 +369,32 @@ export default function Home() {
             </Stack>
           </Box>
 
+          <Box sx={{ mt: 2 }}>
+            <Typography variant="body2" sx={{ opacity: 0.9 }}>
+              Selected node: <strong>{selectedNodeId}</strong>
+            </Typography>
+          </Box>
+
           <Box sx={{ mt: 3 }}>
             <Typography variant="caption" sx={{ opacity: 0.7 }}>
               Airflow obstruction (0 = none, 1 = fully blocked)
             </Typography>
             <Slider
-              value={obstructionRatio}
+              value={selectedObstructionValue}
               min={0}
               max={1}
               step={0.05}
-              onChange={(_, v) => setObstructionRatio(v as number)}
-              onChangeCommitted={(_, v) => applyObstruction(v as number)}
+              onChange={(_, v) => {
+                setDraggingObstructionNodeId(selectedNodeId);
+                draggingObstructionNodeIdRef.current = selectedNodeId;
+                setObstructionDraftByNode((prev) => ({ ...prev, [selectedNodeId]: v as number }));
+              }}
+              onChangeCommitted={(_, v) => applyObstruction(selectedNodeId, v as number)}
               sx={{ mt: 1 }}
             />
+            <Typography variant="body2" sx={{ mt: 0.5, opacity: 0.8 }}>
+              {selectedObstructionValue.toFixed(2)} on {selectedNodeId}
+            </Typography>
             <Stack direction="row" spacing={1} sx={{ mt: 1 }}>
               <Button variant="contained" onClick={doFanFailure}>Fan failure</Button>
               <Button variant="outlined" onClick={doResetAirflow}>Reset airflow</Button>
@@ -339,19 +406,35 @@ export default function Home() {
               Humidity (%)
             </Typography>
             <Slider
-              value={humiditySet}
+              value={selectedHumidityValue}
               min={0}
               max={100}
               step={1}
-              onChange={(_, v) => setHumiditySet(v as number)}
-              onChangeCommitted={(_, v) => applyHumidity(v as number)}
+              onChange={(_, v) => {
+                setDraggingHumidityNodeId(selectedNodeId);
+                draggingHumidityNodeIdRef.current = selectedNodeId;
+                setHumidityDraftByNode((prev) => ({ ...prev, [selectedNodeId]: v as number }));
+              }}
+              onChangeCommitted={(_, v) => applyHumidity(selectedNodeId, v as number)}
               sx={{ mt: 1 }}
             />
+            <Typography variant="body2" sx={{ mt: 0.5, opacity: 0.8 }}>
+              {selectedHumidityValue.toFixed(1)}% on {selectedNodeId}
+            </Typography>
             {controlsError && (
               <Typography variant="body2" sx={{ mt: 1, opacity: 0.85 }}>
                 {controlsError}
               </Typography>
             )}
+          </Box>
+
+          <Box sx={{ mt: 3, display: "flex", flexDirection: "column", gap: 1 }}>
+            <Typography variant="caption" sx={{ opacity: 0.7 }}>
+              Anomalies
+            </Typography>
+            <Button variant="contained" color="warning" onClick={doThermalSpike}>
+              Inject Thermal Spike
+            </Button>
           </Box>
 
           <Box sx={{ mt: 3 }}>
@@ -404,7 +487,13 @@ export default function Home() {
             </Typography>
           </Paper>
 
-          <NodeGrid telemetryByNode={telemetryByNode} apiError={apiError} historyByNode={historyByNode} />
+          <NodeGrid
+            telemetryByNode={telemetryByNode}
+            apiError={apiError}
+            historyByNode={historyByNode}
+            selectedNodeId={selectedNodeId}
+            onSelectNode={setSelectedNodeId}
+          />
         </Box>
       </Box>
     </Box>

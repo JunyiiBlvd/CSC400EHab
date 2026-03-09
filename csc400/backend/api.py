@@ -38,11 +38,15 @@ nodes: Dict[str, VirtualNode] = {
 }
 
 
-class AirflowObstructionRequest(BaseModel):
+class NodeTargetRequest(BaseModel):
+    node_id: str
+
+
+class AirflowObstructionRequest(NodeTargetRequest):
     ratio: float
 
 
-class HumiditySetRequest(BaseModel):
+class HumiditySetRequest(NodeTargetRequest):
     humidity: float
 
 
@@ -85,33 +89,45 @@ def ml_reload():
 
 @app.post("/api/controls/airflow_obstruction")
 def set_airflow_obstruction(body: AirflowObstructionRequest):
+    if body.node_id not in nodes:
+        return {"ok": False, "error": f"Unknown node: {body.node_id}"}
+
     ratio = max(0.0, min(1.0, body.ratio))
-    for node in nodes.values():
-        node.airflow_model.set_obstruction(ratio)
-    return {"ok": True, "obstruction_ratio": ratio}
+    node = nodes[body.node_id]
+    node.airflow_model.set_obstruction(ratio)
+    return {"ok": True, "node_id": body.node_id, "obstruction_ratio": ratio}
 
 
 @app.post("/api/controls/fan_failure")
-def fan_failure():
-    for node in nodes.values():
-        node.airflow_model.simulate_fan_failure()
-    return {"ok": True, "obstruction_ratio": 1.0}
+def fan_failure(body: NodeTargetRequest):
+    if body.node_id not in nodes:
+        return {"ok": False, "error": f"Unknown node: {body.node_id}"}
+
+    node = nodes[body.node_id]
+    node.airflow_model.simulate_fan_failure()
+    return {"ok": True, "node_id": body.node_id, "obstruction_ratio": 1.0}
 
 
 @app.post("/api/controls/reset_airflow")
-def reset_airflow():
-    for node in nodes.values():
-        node.airflow_model.reset()
-    return {"ok": True, "obstruction_ratio": 0.0}
+def reset_airflow(body: NodeTargetRequest):
+    if body.node_id not in nodes:
+        return {"ok": False, "error": f"Unknown node: {body.node_id}"}
+
+    node = nodes[body.node_id]
+    node.airflow_model.reset()
+    return {"ok": True, "node_id": body.node_id, "obstruction_ratio": 0.0}
 
 
 @app.post("/api/controls/set_humidity")
 def set_humidity(body: HumiditySetRequest):
+    if body.node_id not in nodes:
+        return {"ok": False, "error": f"Unknown node: {body.node_id}"}
+
     humidity = max(0.0, min(100.0, body.humidity))
-    for node in nodes.values():
-        node.humidity_model.initial_humidity = humidity
-        node.humidity_model.current_humidity = humidity
-    return {"ok": True, "humidity": humidity}
+    node = nodes[body.node_id]
+    node.humidity_model.initial_humidity = humidity
+    node.humidity_model.current_humidity = humidity
+    return {"ok": True, "node_id": body.node_id, "humidity": humidity}
 
 
 @app.websocket("/ws/simulation")
@@ -124,6 +140,7 @@ async def websocket_simulation(websocket: WebSocket):
                 telemetry = node_inst.step()
                 telemetry["node_id"] = node_id
                 telemetry["timestamp"] = time.time()
+                telemetry["obstruction_ratio"] = node_inst.airflow_model.obstruction_ratio
                 if telemetry.get("anomaly_score") is None:
                     telemetry["anomaly_score"] = None
                 frame[node_id] = telemetry
