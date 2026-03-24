@@ -54,3 +54,4 @@ __pycache__/
 *.pyc
 node_modules/
 CLAUDE.md
+GEMINI.md
