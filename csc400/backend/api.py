@@ -3,12 +3,14 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import Dict
 import asyncio
+import json
 import time
 
 from backend.simulation.thermal_model import ThermalModel
 from backend.simulation.node import VirtualNode
 from backend.simulation.airflow import AirflowModel
 from backend.simulation.humidity import HumidityModel
+from backend.simulation.central_server import CentralServer
 from backend.ml.model_loader import ModelLoader
 
 app = FastAPI(title="E-Habitat API")
@@ -36,6 +38,18 @@ nodes: Dict[str, VirtualNode] = {
     node_id: make_node(node_id, NODE_SEEDS[node_id], NODE_TEMPS[node_id])
     for node_id in NODE_SEEDS
 }
+
+# CentralServer — shared ModelLoader, separate from the per-node instances
+try:
+    _central_model = ModelLoader()
+    central_server = CentralServer(_central_model)
+except Exception as e:
+    print(f"[CentralServer] Failed to load model, central detection disabled: {e}")
+    central_server = None
+
+# Per-node state for detecting edge False→True anomaly transitions
+_prev_edge_anomaly: Dict[str, bool] = {nid: False for nid in NODE_SEEDS}
+_step_seq: Dict[str, int] = {nid: 0 for nid in NODE_SEEDS}
 
 
 class NodeTargetRequest(BaseModel):
@@ -130,6 +144,13 @@ def set_humidity(body: HumiditySetRequest):
     return {"ok": True, "node_id": body.node_id, "humidity": humidity}
 
 
+@app.get("/central/status")
+def central_status():
+    if central_server is None:
+        return {"ok": False, "error": "Central server not available"}
+    return {"ok": True, "nodes": central_server.get_status()}
+
+
 @app.websocket("/ws/simulation")
 async def websocket_simulation(websocket: WebSocket):
     await websocket.accept()
@@ -144,6 +165,26 @@ async def websocket_simulation(websocket: WebSocket):
                 if telemetry.get("anomaly_score") is None:
                     telemetry["anomaly_score"] = None
                 frame[node_id] = telemetry
+
+                # Detect edge False→True transition
+                curr_anomaly: bool = telemetry.get("is_anomaly", False)
+                edge_ts = None
+                if curr_anomaly and not _prev_edge_anomaly[node_id]:
+                    edge_ts = time.time()
+                _prev_edge_anomaly[node_id] = curr_anomaly
+
+                # Feed central server with raw telemetry (no anomaly fields)
+                if central_server is not None:
+                    _step_seq[node_id] += 1
+                    raw_telemetry = {
+                        k: telemetry[k]
+                        for k in ("temperature", "humidity", "airflow", "cpu_load")
+                    }
+                    central_server.receive_telemetry(
+                        node_id, raw_telemetry, _step_seq[node_id], edge_ts,
+                        bytes_edge=len(json.dumps(telemetry).encode()),
+                    )
+
             await websocket.send_json(frame)
             await asyncio.sleep(1)
     except WebSocketDisconnect:
@@ -160,9 +201,13 @@ async def inject_scenario(node_id: str, scenario: str):
     node_inst = nodes[node_id]
     if scenario == "hvac_failure":
         node_inst.airflow_model.simulate_fan_failure()
+        if central_server is not None:
+            central_server.record_injection(node_id, time.time())
         return {"status": "injected", "node": node_id, "scenario": scenario}
     if scenario == "thermal_spike":
         node_inst.inject_thermal_spike(duration_seconds=30)
+        if central_server is not None:
+            central_server.record_injection(node_id, time.time())
         return {"status": "injected", "node": node_id, "scenario": scenario}
     if scenario == "reset":
         nodes[node_id] = make_node(node_id, NODE_SEEDS[node_id], NODE_TEMPS[node_id])

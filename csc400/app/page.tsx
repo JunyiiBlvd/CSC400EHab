@@ -243,6 +243,36 @@ export default function Home() {
     }
   }, [telemetryByNode]);
 
+  // Central vs Edge comparison state
+  type CentralNodeStatus = {
+    edge_latency_ms: number | null;
+    central_latency_ms: number | null;
+    latency_delta_ms: number | null;
+    bytes_edge: number | null;
+    bytes_central: number | null;
+    last_updated: number | null;
+  };
+  const [centralStatus, setCentralStatus] = useState<Record<string, CentralNodeStatus>>({});
+
+  useEffect(() => {
+    let cancelled = false;
+    async function poll() {
+      try {
+        const res = await fetch("http://localhost:8000/central/status");
+        const data = await res.json();
+        if (!cancelled && data.ok) setCentralStatus(data.nodes);
+      } catch {
+        // backend offline — silently ignore, keep last value
+      }
+    }
+    poll();
+    const id = setInterval(poll, 1000);
+    return () => {
+      cancelled = true;
+      clearInterval(id);
+    };
+  }, []);
+
   const selectedObstructionValue =
     obstructionDraftByNode[selectedNodeId] ?? selectedTelemetry?.obstruction_ratio ?? 0;
   const selectedHumidityValue = humidityDraftByNode[selectedNodeId] ?? selectedTelemetry?.humidity ?? 45;
@@ -499,10 +529,61 @@ export default function Home() {
           <AlertsFeed alerts={alerts} />
 
           <Paper sx={panelStyle}>
-            <Typography variant="h6">Central vs Edge Comparison</Typography>
-            <Typography variant="body2" sx={{ opacity: 0.7 }}>
-              Placeholder for latency + message volume metrics.
+            <Typography variant="h6" sx={{ mb: 2 }}>
+              Central vs Edge Comparison
             </Typography>
+            <Box sx={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 2 }}>
+              {NODE_IDS.map((nodeId) => {
+                const s = centralStatus[nodeId];
+                const fmt = (v: number | null | undefined, unit: string) =>
+                  v == null ? "Waiting for anomaly..." : `${v.toFixed(2)} ${unit}`;
+                const bwRatio =
+                  s?.bytes_edge != null && s.bytes_edge > 0 && s?.bytes_central != null
+                    ? ((s.bytes_central / s.bytes_edge) * 100).toFixed(1) + "%"
+                    : "Waiting for anomaly...";
+                return (
+                  <Box
+                    key={nodeId}
+                    sx={{
+                      p: 1.5,
+                      borderRadius: 2,
+                      bgcolor: "rgba(255,255,255,0.06)",
+                      border: "1px solid rgba(255,255,255,0.10)",
+                    }}
+                  >
+                    <Typography variant="subtitle2" sx={{ mb: 1, opacity: 0.9, fontWeight: 700 }}>
+                      {nodeId.toUpperCase()}
+                    </Typography>
+                    <Stack spacing={0.5}>
+                      <Typography variant="body2">
+                        <span style={{ opacity: 0.6 }}>Edge latency: </span>
+                        {fmt(s?.edge_latency_ms, "ms")}
+                      </Typography>
+                      <Typography variant="body2">
+                        <span style={{ opacity: 0.6 }}>Central latency: </span>
+                        {fmt(s?.central_latency_ms, "ms")}
+                      </Typography>
+                      <Typography variant="body2">
+                        <span style={{ opacity: 0.6 }}>Latency delta: </span>
+                        {fmt(s?.latency_delta_ms, "ms")}
+                      </Typography>
+                      <Typography variant="body2">
+                        <span style={{ opacity: 0.6 }}>Bytes (edge): </span>
+                        {s?.bytes_edge != null ? `${s.bytes_edge} B` : "Waiting for anomaly..."}
+                      </Typography>
+                      <Typography variant="body2">
+                        <span style={{ opacity: 0.6 }}>Bytes (central): </span>
+                        {s?.bytes_central != null ? `${s.bytes_central} B` : "Waiting for anomaly..."}
+                      </Typography>
+                      <Typography variant="body2">
+                        <span style={{ opacity: 0.6 }}>BW ratio: </span>
+                        {bwRatio}
+                      </Typography>
+                    </Stack>
+                  </Box>
+                );
+              })}
+            </Box>
           </Paper>
 
           <NodeGrid

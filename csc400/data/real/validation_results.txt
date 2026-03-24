@@ -1,0 +1,14 @@
+MIT Real Anomaly Validation Summary
+====================================
+Total anomaly windows tested: 1732
+Detected: 1662
+Missed:   70
+Recall:   95.96%
+
+Score Distribution:
+Average score (Detected): -0.0245
+Average score (Missed):   0.0150
+Min detected score:     -0.1147
+Max detected score:     -0.0000
+
+We extracted anomaly windows from the MIT CSAIL Intel Lab sensor dataset by flagging temperature deltas exceeding 5°C between consecutive readings on the same sensor node which is a standard indicator of abnormal behavior in that dataset. These are real sensor readings from real deployed hardware. The model detected 95.96% of them without seeing any of this data during training.
