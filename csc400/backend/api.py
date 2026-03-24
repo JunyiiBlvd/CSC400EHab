@@ -5,6 +5,7 @@ from typing import Dict
 import asyncio
 import json
 import time
+import sqlite3
 
 from backend.simulation.thermal_model import ThermalModel
 from backend.simulation.node import VirtualNode
@@ -12,6 +13,9 @@ from backend.simulation.airflow import AirflowModel
 from backend.simulation.humidity import HumidityModel
 from backend.simulation.central_server import CentralServer
 from backend.ml.model_loader import ModelLoader
+from backend.simulation.database import init_db, insert_telemetry, insert_anomaly_event, DB_PATH
+
+init_db()
 
 app = FastAPI(title="E-Habitat API")
 
@@ -49,6 +53,7 @@ except Exception as e:
 
 # Per-node state for detecting edge False→True anomaly transitions
 _prev_edge_anomaly: Dict[str, bool] = {nid: False for nid in NODE_SEEDS}
+_prev_central_detection: Dict[str, bool] = {nid: False for nid in NODE_SEEDS}
 _step_seq: Dict[str, int] = {nid: 0 for nid in NODE_SEEDS}
 
 
@@ -151,6 +156,38 @@ def central_status():
     return {"ok": True, "nodes": central_server.get_status()}
 
 
+@app.get("/db/anomaly_summary")
+def get_anomaly_summary():
+    query = """
+    SELECT
+        detection_source,
+        COUNT(*) as sample_count,
+        ROUND(AVG(edge_latency_ms), 1) as avg_edge_ms,
+        ROUND(AVG(central_latency_ms), 1) as avg_central_ms,
+        ROUND(AVG(central_latency_ms - edge_latency_ms), 1) as avg_delta_ms,
+        ROUND(MIN(central_latency_ms - edge_latency_ms), 1) as min_delta_ms,
+        ROUND(MAX(central_latency_ms - edge_latency_ms), 1) as max_delta_ms
+    FROM anomaly_events
+    WHERE edge_latency_ms IS NOT NULL
+    AND central_latency_ms IS NOT NULL;
+    """
+    try:
+        conn = sqlite3.connect(str(DB_PATH))
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        cursor.execute(query)
+        row = cursor.fetchone()
+        conn.close()
+
+        if row and row["sample_count"] > 0:
+            # Convert Row to dict
+            return {"ok": True, "summary": [dict(row)]}
+        else:
+            return {"ok": True, "summary": []}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
 @app.websocket("/ws/simulation")
 async def websocket_simulation(websocket: WebSocket):
     await websocket.accept()
@@ -166,16 +203,50 @@ async def websocket_simulation(websocket: WebSocket):
                     telemetry["anomaly_score"] = None
                 frame[node_id] = telemetry
 
+                # Increment sequence
+                _step_seq[node_id] += 1
+
+                # DB Insert: Telemetry
+                insert_telemetry({
+                    "seq_id": _step_seq[node_id],
+                    "node_id": node_id,
+                    "timestamp": telemetry["timestamp"],
+                    "temperature": telemetry.get("temperature"),
+                    "humidity": telemetry.get("humidity"),
+                    "airflow": telemetry.get("airflow"),
+                    "cpu_load": telemetry.get("cpu_load"),
+                    "is_anomaly": 1 if telemetry.get("is_anomaly") else 0,
+                    "anomaly_score": telemetry.get("anomaly_score")
+                })
+
                 # Detect edge False→True transition
                 curr_anomaly: bool = telemetry.get("is_anomaly", False)
                 edge_ts = None
                 if curr_anomaly and not _prev_edge_anomaly[node_id]:
                     edge_ts = time.time()
+
+                    # DB Insert: Edge Anomaly Event
+                    c_status = central_server.get_status().get(node_id, {}) if central_server else {}
+                    injection_ts = None
+                    if central_server and node_id in getattr(central_server, "_records", {}):
+                        injection_ts = central_server._records[node_id].get("injection_ts")
+
+                    insert_anomaly_event({
+                        "seq_id": _step_seq[node_id],
+                        "node_id": node_id,
+                        "injection_timestamp": injection_ts,
+                        "edge_detection_ts": edge_ts,
+                        "central_detection_ts": None,
+                        "edge_latency_ms": c_status.get("edge_latency_ms"),
+                        "central_latency_ms": None,
+                        "detection_source": "edge",
+                        "bytes_edge": len(json.dumps(telemetry).encode()),
+                        "bytes_central": c_status.get("bytes_central")
+                    })
                 _prev_edge_anomaly[node_id] = curr_anomaly
 
                 # Feed central server with raw telemetry (no anomaly fields)
                 if central_server is not None:
-                    _step_seq[node_id] += 1
                     raw_telemetry = {
                         k: telemetry[k]
                         for k in ("temperature", "humidity", "airflow", "cpu_load")
@@ -184,6 +255,27 @@ async def websocket_simulation(websocket: WebSocket):
                         node_id, raw_telemetry, _step_seq[node_id], edge_ts,
                         bytes_edge=len(json.dumps(telemetry).encode()),
                     )
+
+                    # DB Insert: Central Anomaly Event check
+                    c_status = central_server.get_status().get(node_id, {})
+                    c_det_ts = c_status.get("central_detection_ts")
+                    if c_det_ts and not _prev_central_detection[node_id]:
+                        injection_ts = central_server._records[node_id].get("injection_ts")
+                        insert_anomaly_event({
+                            "seq_id": _step_seq[node_id],
+                            "node_id": node_id,
+                            "injection_timestamp": injection_ts,
+                            "edge_detection_ts": c_status.get("edge_detection_ts"),
+                            "central_detection_ts": c_det_ts,
+                            "edge_latency_ms": c_status.get("edge_latency_ms"),
+                            "central_latency_ms": c_status.get("central_latency_ms"),
+                            "detection_source": "central",
+                            "bytes_edge": c_status.get("bytes_edge"),
+                            "bytes_central": c_status.get("bytes_central")
+                        })
+                        _prev_central_detection[node_id] = True
+                    elif not c_det_ts:
+                        _prev_central_detection[node_id] = False
 
             await websocket.send_json(frame)
             await asyncio.sleep(1)
