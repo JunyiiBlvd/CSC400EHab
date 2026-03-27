@@ -52,6 +52,11 @@ class VirtualNode:
         self.cpu_load_override = 0.0
         self.hvac_lag_steps = 0
         self._frozen_airflow = None
+        self.hvac_failure_remaining_steps = 0
+        self.hvac_failure_total_steps = 0
+        self.coolant_leak_active = False
+        self.coolant_leak_remaining_steps = 0
+        self.coolant_leak_base_humidity = 0.0
         
         # Anomaly Persistence State
         self.recent_anomaly_flags = []
@@ -90,6 +95,33 @@ class VirtualNode:
         # Reduce airflow to 15% during lag - HVAC not responding
         self._frozen_airflow = self.airflow_model.current_flow * 0.15
 
+    def inject_hvac_failure(self, duration_seconds: int = 40):
+        """
+        Injects an HVAC failure by linearly ramping airflow down to zero over the
+        first 15 steps, then holding at full blockage for the remainder of the duration.
+
+        Unlike simulate_fan_failure(), this keeps air_roc non-zero for ~25 steps,
+        sustaining the anomaly signal across the full sliding window fill cycle.
+
+        After duration_seconds steps the failure clears and normal airflow resumes.
+
+        Args:
+            duration_seconds (int): Total steps the failure lasts.
+        """
+        self.hvac_failure_remaining_steps = duration_seconds
+        self.hvac_failure_total_steps = duration_seconds
+
+    def inject_coolant_leak(self):
+        """
+        Injects a coolant leak by overriding humidity with a steep ramp.
+
+        Humidity rises by 2.5% RH per step from the current value, capped at 85.0.
+        The ramp runs for 20 steps then holds at the capped value until cleared.
+        """
+        self.coolant_leak_active = True
+        self.coolant_leak_remaining_steps = 20
+        self.coolant_leak_base_humidity = self.humidity_model.current_humidity
+
     def _generate_cpu_load(self) -> float:
         """
         Generates a CPU load using an AR(1) process or returns an override if a spike is active.
@@ -124,7 +156,13 @@ class VirtualNode:
         cpu_load = self._generate_cpu_load()
         
         # 2. Airflow responds to last step's temperature
-        if self.hvac_lag_steps > 0:
+        if self.hvac_failure_remaining_steps > 0:
+            elapsed = self.hvac_failure_total_steps - self.hvac_failure_remaining_steps
+            ramp_ratio = min(1.0, elapsed / 15.0)
+            current_airflow = self.airflow_model.nominal_flow * (1.0 - ramp_ratio)
+            self.airflow_model.current_flow = current_airflow
+            self.hvac_failure_remaining_steps -= 1
+        elif self.hvac_lag_steps > 0:
             current_airflow = self._frozen_airflow
             self.hvac_lag_steps -= 1
         else:
@@ -141,6 +179,17 @@ class VirtualNode:
             
         # 5. Humidity update (now COUPLED to the NEW temperature)
         current_humidity = self.humidity_model.step(temperature)
+
+        # Coolant leak override — applied after physics, before ML
+        if self.coolant_leak_active:
+            if self.coolant_leak_remaining_steps > 0:
+                current_humidity = min(
+                    85.0,
+                    self.coolant_leak_base_humidity + 2.5 * (20 - self.coolant_leak_remaining_steps)
+                )
+                self.coolant_leak_remaining_steps -= 1
+            else:
+                current_humidity = min(85.0, self.coolant_leak_base_humidity + 50.0)
 
         telemetry = {
             "node_id": self.node_id,

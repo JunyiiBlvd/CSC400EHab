@@ -1,6 +1,10 @@
 "use client";
 
-import { Box, Paper, Typography, Slider, Button, Stack, Chip } from "@mui/material";
+import {
+  Box, Paper, Typography, Slider, Button, Stack, Chip,
+  Tabs, Tab,
+  Table, TableBody, TableCell, TableContainer, TableHead, TableRow,
+} from "@mui/material";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import NodeGrid from "./components/NodeGrid";
@@ -21,7 +25,171 @@ import {
 const NODE_IDS = ["node-1", "node-2", "node-3"] as const;
 const MAX_POINTS = 300;
 
+// ── History tab ──────────────────────────────────────────────────────────────
+
+type AnomalyEvent = {
+  id: number;
+  seq_id: number;
+  node_id: string;
+  injection_timestamp: number | null;
+  edge_detection_ts: number | null;
+  central_detection_ts: number | null;
+  edge_latency_ms: number | null;
+  central_latency_ms: number | null;
+  detection_source: string | null;
+  bytes_edge: number | null;
+  bytes_central: number | null;
+};
+
+type SummaryRow = {
+  detection_source: string | null;
+  sample_count: number;
+  avg_edge_ms: number | null;
+  avg_central_ms: number | null;
+  avg_delta_ms: number | null;
+  min_delta_ms: number | null;
+  max_delta_ms: number | null;
+};
+
+function HistoryTab() {
+  const [events, setEvents] = useState<AnomalyEvent[]>([]);
+  const [summary, setSummary] = useState<SummaryRow | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [fetchError, setFetchError] = useState<string | null>(null);
+
+  async function fetchEvents() {
+    setLoading(true);
+    setFetchError(null);
+    try {
+      const [evRes, sumRes] = await Promise.all([
+        fetch("http://localhost:8000/db/history/events"),
+        fetch("http://localhost:8000/db/anomaly_summary"),
+      ]);
+      const evData = await evRes.json();
+      const sumData = await sumRes.json();
+      if (evData.ok) {
+        setEvents(evData.events);
+      } else {
+        setFetchError(evData.error ?? "Failed to fetch events");
+      }
+      if (sumData.ok && sumData.summary.length > 0) {
+        setSummary(sumData.summary[0]);
+      } else {
+        setSummary(null);
+      }
+    } catch (e: unknown) {
+      setFetchError(e instanceof Error ? e.message : "Network error");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    fetchEvents();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  function fmtTs(ts: number | null): string {
+    if (ts == null) return "—";
+    return new Date(ts * 1000).toLocaleString();
+  }
+
+  function fmtMs(v: number | null): string {
+    return v == null ? "—" : v.toFixed(1);
+  }
+
+  function fmtDelta(edge: number | null, central: number | null): string {
+    return edge == null || central == null ? "—" : (central - edge).toFixed(1);
+  }
+
+  function fmtStat(v: number | null | undefined): string {
+    return v == null ? "—" : v.toFixed(1) + " ms";
+  }
+
+  const statCards = [
+    { label: "Total Events",        value: summary ? String(summary.sample_count) : "—" },
+    { label: "Avg Edge Latency",    value: fmtStat(summary?.avg_edge_ms) },
+    { label: "Avg Central Latency", value: fmtStat(summary?.avg_central_ms) },
+    { label: "Avg Delta",           value: fmtStat(summary?.avg_delta_ms) },
+    { label: "Min Delta",           value: fmtStat(summary?.min_delta_ms) },
+    { label: "Max Delta",           value: fmtStat(summary?.max_delta_ms) },
+  ];
+
+  return (
+    <Box>
+      <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between", mb: 2 }}>
+        <Typography variant="h6">Anomaly Event History</Typography>
+        <Button variant="outlined" onClick={fetchEvents} disabled={loading} size="small">
+          {loading ? "Loading..." : "Refresh"}
+        </Button>
+      </Box>
+
+      <Box sx={{ display: "grid", gridTemplateColumns: "repeat(6, 1fr)", gap: 1.5, mb: 3 }}>
+        {statCards.map(({ label, value }) => (
+          <Paper key={label} sx={statCardStyle}>
+            <Typography variant="caption" sx={{ opacity: 0.6, display: "block", mb: 0.75, lineHeight: 1.3 }}>
+              {label}
+            </Typography>
+            <Typography variant="h5" sx={{ fontWeight: 700 }}>
+              {value}
+            </Typography>
+          </Paper>
+        ))}
+      </Box>
+
+      {fetchError && (
+        <Typography variant="body2" color="error" sx={{ mb: 2 }}>
+          {fetchError}
+        </Typography>
+      )}
+
+      {!loading && events.length === 0 ? (
+        <Box sx={{ textAlign: "center", mt: 10, opacity: 0.55 }}>
+          <Typography variant="body1">
+            No anomaly events recorded yet. Run a simulation and inject an anomaly to see history.
+          </Typography>
+        </Box>
+      ) : (
+        <TableContainer
+          component={Paper}
+          sx={{ bgcolor: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.12)" }}
+        >
+          <Table size="small">
+            <TableHead>
+              <TableRow>
+                <TableCell sx={thStyle}>Node ID</TableCell>
+                <TableCell sx={thStyle}>Detection Source</TableCell>
+                <TableCell sx={thStyle}>Injection Time</TableCell>
+                <TableCell sx={thStyle}>Edge Latency (ms)</TableCell>
+                <TableCell sx={thStyle}>Central Latency (ms)</TableCell>
+                <TableCell sx={thStyle}>Delta (ms)</TableCell>
+                <TableCell sx={thStyle}>Bytes Edge</TableCell>
+                <TableCell sx={thStyle}>Bytes Central</TableCell>
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {events.map((ev) => (
+                <TableRow key={ev.id} sx={{ "&:hover": { bgcolor: "rgba(255,255,255,0.06)" } }}>
+                  <TableCell sx={tdStyle}>{ev.node_id}</TableCell>
+                  <TableCell sx={tdStyle}>{ev.detection_source ?? "—"}</TableCell>
+                  <TableCell sx={tdStyle}>{fmtTs(ev.injection_timestamp)}</TableCell>
+                  <TableCell sx={tdStyle}>{fmtMs(ev.edge_latency_ms)}</TableCell>
+                  <TableCell sx={tdStyle}>{fmtMs(ev.central_latency_ms)}</TableCell>
+                  <TableCell sx={tdStyle}>{fmtDelta(ev.edge_latency_ms, ev.central_latency_ms)}</TableCell>
+                  <TableCell sx={tdStyle}>{ev.bytes_edge ?? "—"}</TableCell>
+                  <TableCell sx={tdStyle}>{ev.bytes_central ?? "—"}</TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </TableContainer>
+      )}
+    </Box>
+  );
+}
+
 export default function Home() {
+  const [activeTab, setActiveTab] = useState(0);
   const [telemetryByNode, setTelemetryByNode] = useState<TelemetryByNode>({});
   const [apiError, setApiError] = useState<string | null>(null);
   const [selectedNodeId, setSelectedNodeId] = useState<string>("node-1");
@@ -362,6 +530,26 @@ export default function Home() {
     }
   }
 
+  async function doInjectCoolantLeak() {
+    try {
+      setControlsError(null);
+      const params = new URLSearchParams({ node_id: selectedNodeId, scenario: "coolant_leak" });
+      const res = await fetch(`http://localhost:8000/simulation/inject?${params.toString()}`, { method: "POST" });
+      if (!res.ok) throw new Error(`API error ${res.status}`);
+
+      const alertCoolant: AlertItem = {
+        id: `coolant-leak-${selectedNodeId}-${Date.now()}`,
+        ts: new Date().toISOString(),
+        level: "warn" as const,
+        message: `Coolant leak injected on ${selectedNodeId}`,
+      };
+
+      setAlerts((prev) => [alertCoolant, ...prev].slice(0, 10));
+    } catch (e: unknown) {
+      setControlsError(e instanceof Error ? e.message : "Failed to inject coolant leak");
+    }
+  }
+
   const anomalyChip = selectedTelemetry?.is_anomaly === true ? (
     <Chip label="ANOMALY" color="error" size="small" />
   ) : mlStatus?.window_ready ? (
@@ -372,7 +560,7 @@ export default function Home() {
 
   return (
     <Box sx={{ minHeight: "100vh", bgcolor: "#0b1220", color: "white", p: 3 }}>
-      <Box sx={{ display: "flex", alignItems: "center", gap: 2, mb: 3 }}>
+      <Box sx={{ display: "flex", alignItems: "center", gap: 2, mb: 2 }}>
         <Typography variant="h4" sx={{ fontWeight: 700 }}>
           E-Habitat Dashboard
         </Typography>
@@ -382,7 +570,17 @@ export default function Home() {
         </Typography>
       </Box>
 
-      <Box sx={{ display: "grid", gridTemplateColumns: "320px 1fr", gap: 2 }}>
+      <Tabs
+        value={activeTab}
+        onChange={(_, v) => setActiveTab(v as number)}
+        sx={tabsStyle}
+      >
+        <Tab label="Dashboard" />
+        <Tab label="History" />
+      </Tabs>
+
+      {activeTab === 0 && (
+      <Box sx={{ display: "grid", gridTemplateColumns: "320px 1fr", gap: 2, mt: 2 }}>
         <Paper sx={panelStyle}>
           <Typography variant="h6" sx={{ mb: 1 }}>
             Controls Panel
@@ -482,6 +680,9 @@ export default function Home() {
             </Typography>
             <Button variant="contained" color="warning" onClick={doThermalSpike}>
               Inject Thermal Spike
+            </Button>
+            <Button variant="contained" sx={{ bgcolor: "#3b82f6" }} onClick={doInjectCoolantLeak}>
+              Inject Coolant Leak
             </Button>
           </Box>
 
@@ -595,6 +796,13 @@ export default function Home() {
           />
         </Box>
       </Box>
+      )}
+
+      {activeTab === 1 && (
+        <Box sx={{ mt: 2 }}>
+          <HistoryTab />
+        </Box>
+      )}
     </Box>
   );
 }
@@ -605,4 +813,36 @@ const panelStyle = {
   bgcolor: "rgba(255,255,255,0.04)",
   border: "1px solid rgba(255,255,255,0.12)",
   color: "white",
+};
+
+const tabsStyle = {
+  borderBottom: "1px solid rgba(255,255,255,0.12)",
+  "& .MuiTab-root": {
+    color: "rgba(255,255,255,0.6)",
+    "&.Mui-selected": { color: "white" },
+  },
+  "& .MuiTabs-indicator": { backgroundColor: "#3b82f6" },
+};
+
+const thStyle = {
+  color: "rgba(255,255,255,0.6)",
+  borderBottom: "1px solid rgba(255,255,255,0.12)",
+  fontWeight: 600,
+  fontSize: "0.75rem",
+  textTransform: "uppercase" as const,
+  letterSpacing: "0.05em",
+};
+
+const tdStyle = {
+  color: "rgba(255,255,255,0.87)",
+  borderBottom: "1px solid rgba(255,255,255,0.08)",
+};
+
+const statCardStyle = {
+  p: 2,
+  bgcolor: "rgba(255,255,255,0.04)",
+  border: "1px solid rgba(255,255,255,0.10)",
+  borderRadius: 2,
+  color: "white",
+  textAlign: "center" as const,
 };

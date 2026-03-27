@@ -78,12 +78,12 @@ def insert_anomaly_event(record: dict):
     """Inserts one row into anomaly_events. Dict keys must match column names."""
     query = """
         INSERT INTO anomaly_events (
-            seq_id, node_id, injection_timestamp, edge_detection_ts, 
-            central_detection_ts, edge_latency_ms, central_latency_ms, 
+            seq_id, node_id, injection_timestamp, edge_detection_ts,
+            central_detection_ts, edge_latency_ms, central_latency_ms,
             detection_source, bytes_edge, bytes_central
         ) VALUES (
-            :seq_id, :node_id, :injection_timestamp, :edge_detection_ts, 
-            :central_detection_ts, :edge_latency_ms, :central_latency_ms, 
+            :seq_id, :node_id, :injection_timestamp, :edge_detection_ts,
+            :central_detection_ts, :edge_latency_ms, :central_latency_ms,
             :detection_source, :bytes_edge, :bytes_central
         )
     """
@@ -95,3 +95,37 @@ def insert_anomaly_event(record: dict):
     except Exception as e:
         # A failed database write must NEVER crash the application
         print(f"Database error in insert_anomaly_event: {e}")
+
+def get_anomaly_events() -> list:
+    """Returns all rows from anomaly_events ordered by injection_timestamp DESC."""
+    query = "SELECT * FROM anomaly_events ORDER BY injection_timestamp DESC"
+    try:
+        conn = sqlite3.connect(str(DB_PATH), check_same_thread=False)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        cursor.execute(query)
+        rows = cursor.fetchall()
+        conn.close()
+        return [dict(r) for r in rows]
+    except Exception as e:
+        print(f"Database error in get_anomaly_events: {e}")
+        return []
+
+def get_telemetry_range(node_id: str, start: float, end: float) -> list:
+    """Returns telemetry rows for node_id between start and end timestamps, ordered ASC."""
+    query = """
+        SELECT * FROM telemetry
+        WHERE node_id = ? AND timestamp >= ? AND timestamp <= ?
+        ORDER BY timestamp ASC
+    """
+    try:
+        conn = sqlite3.connect(str(DB_PATH), check_same_thread=False)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        cursor.execute(query, (node_id, start, end))
+        rows = cursor.fetchall()
+        conn.close()
+        return [dict(r) for r in rows]
+    except Exception as e:
+        print(f"Database error in get_telemetry_range: {e}")
+        return []
