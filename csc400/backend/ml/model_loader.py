@@ -45,7 +45,11 @@ class ModelLoader:
     def predict(self, feature_vector: List[float]) -> Dict[str, Any]:
         scaled = self.scaler.transform([feature_vector])
         score = self.model.decision_function(scaled)[0]
-        is_anomaly = self.model.predict(scaled)[0] == -1
+        # Threshold lowered from model.offset_ (effectively score < 0) to score < 0.15
+        # Clean baseline floor: 0.2275 (11σ above threshold)
+        # HVAC failure minimum: 0.082 | Coolant leak minimum: 0.070
+        # Profiled 2026-03-27 — backend/tests/test_clean_baseline_profile.py
+        is_anomaly = float(score) < 0.15
         
         return {
             "anomaly_score": float(score),

@@ -2,16 +2,17 @@ This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-
 
 ## Getting Started
 
-First, run the development server:
+Two servers must be running simultaneously. Open two terminal windows from the project root.
 
+**Terminal 1 — FastAPI backend (port 8000):**
+```bash
+source venv/bin/activate
+uvicorn backend.api:app --reload
+```
+
+**Terminal 2 — Next.js frontend (port 3000):**
 ```bash
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
 Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.

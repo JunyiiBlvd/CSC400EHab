@@ -1,7 +1,8 @@
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from typing import Dict
+from typing import Dict, Optional
 import asyncio
 import json
 import time
@@ -13,7 +14,7 @@ from backend.simulation.airflow import AirflowModel
 from backend.simulation.humidity import HumidityModel
 from backend.simulation.central_server import CentralServer
 from backend.ml.model_loader import ModelLoader
-from backend.simulation.database import init_db, insert_telemetry, insert_anomaly_event, DB_PATH
+from backend.simulation.database import init_db, insert_telemetry, insert_anomaly_event, get_anomaly_events, get_telemetry_range, DB_PATH
 
 init_db()
 
@@ -123,7 +124,9 @@ def fan_failure(body: NodeTargetRequest):
         return {"ok": False, "error": f"Unknown node: {body.node_id}"}
 
     node = nodes[body.node_id]
-    node.airflow_model.simulate_fan_failure()
+    node.inject_hvac_failure(duration_seconds=40)
+    if central_server is not None:
+        central_server.record_injection(body.node_id, time.time())
     return {"ok": True, "node_id": body.node_id, "obstruction_ratio": 1.0}
 
 
@@ -186,6 +189,27 @@ def get_anomaly_summary():
             return {"ok": True, "summary": []}
     except Exception as e:
         return {"ok": False, "error": str(e)}
+
+
+@app.get("/db/history/events")
+def history_events():
+    events = get_anomaly_events()
+    return {"ok": True, "events": events}
+
+
+@app.get("/db/history/telemetry")
+def history_telemetry(
+    node_id: Optional[str] = None,
+    start: Optional[float] = None,
+    end: Optional[float] = None,
+):
+    if node_id is None or start is None or end is None:
+        return JSONResponse(
+            status_code=400,
+            content={"ok": False, "error": "node_id, start, and end are required"},
+        )
+    rows = get_telemetry_range(node_id, start, end)
+    return {"ok": True, "rows": rows}
 
 
 @app.websocket("/ws/simulation")
@@ -292,12 +316,20 @@ async def inject_scenario(node_id: str, scenario: str):
         return {"error": f"Unknown node: {node_id}"}
     node_inst = nodes[node_id]
     if scenario == "hvac_failure":
-        node_inst.airflow_model.simulate_fan_failure()
+        # Ramped injection — sustains air_roc signal for 15 steps vs 9 for instant snap
+        # Confirmed DETECTABLE: 15-step streak, min score 0.073, threshold 0.15
+        # Profiled 2026-03-27 — backend/tests/test_hvac_ramp_feasibility.py
+        node_inst.inject_hvac_failure(duration_seconds=40)
         if central_server is not None:
             central_server.record_injection(node_id, time.time())
         return {"status": "injected", "node": node_id, "scenario": scenario}
     if scenario == "thermal_spike":
         node_inst.inject_thermal_spike(duration_seconds=30)
+        if central_server is not None:
+            central_server.record_injection(node_id, time.time())
+        return {"status": "injected", "node": node_id, "scenario": scenario}
+    if scenario == "coolant_leak":
+        node_inst.inject_coolant_leak()
         if central_server is not None:
             central_server.record_injection(node_id, time.time())
         return {"status": "injected", "node": node_id, "scenario": scenario}
