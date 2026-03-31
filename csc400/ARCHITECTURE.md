@@ -1,6 +1,6 @@
 # E-Habitat Architecture Map
 
-> Generated: 2026-03-24
+> Generated: 2026-03-27 (updated)
 > Source: exhaustive static analysis of `/mnt/storage/projects/CSC400EHab/csc400/`
 
 ---
@@ -61,8 +61,13 @@
 │   │   └── thermal_model.py
 │   └── tests/
 │       ├── test_airflow_model.py
+│       ├── test_clean_baseline_profile.py
 │       ├── test_environment_model.py
 │       ├── test_feature_extraction.py
+│       ├── test_humidity_feasibility.py
+│       ├── test_humidity_feature_analysis.py
+│       ├── test_hvac_feasibility.py
+│       ├── test_hvac_ramp_feasibility.py
 │       ├── test_humidity_model.py
 │       ├── test_model_loader.py
 │       ├── test_thermal.py
@@ -212,7 +217,8 @@
 - Returns `{ok, node_id, obstruction_ratio}`
 
 **`POST /api/controls/fan_failure`** — body: `NodeTargetRequest`
-- `nodes[node_id].airflow_model.simulate_fan_failure()`
+- `nodes[node_id].inject_hvac_failure(duration_seconds=40)` — ramped HVAC failure (not instant snap)
+- `central_server.record_injection(node_id, time.time())` — required so latency is measurable
 - Returns `{ok, node_id, obstruction_ratio: 1.0}`
 
 **`POST /api/controls/reset_airflow`** — body: `NodeTargetRequest`
@@ -232,6 +238,15 @@
 - Runs SQL aggregation over `anomaly_events` table
 - Groups by `detection_source`; returns averages for latency and delta metrics
 
+**`GET /db/history/events`**
+- Calls `get_anomaly_events()` → all rows from `anomaly_events`, ordered by `injection_timestamp DESC`
+- Returns `{ok: True, events: [...]}`
+
+**`GET /db/history/telemetry`** — query params: `node_id: str`, `start: float`, `end: float` (all required)
+- Returns `400` if any param missing
+- Calls `get_telemetry_range(node_id, start, end)` → telemetry rows in `[start, end]` ordered ASC
+- Returns `{ok: True, rows: [...]}`
+
 **`WebSocket /ws/simulation`** — PRIMARY SIMULATION LOOP
 - Accepts connection, enters `while True:` with `asyncio.sleep(1.0)` per iteration
 - Per iteration, for each node:
@@ -248,12 +263,15 @@
 - Catches `WebSocketDisconnect` (clean exit) and generic `Exception` (logged, socket closed)
 
 **`POST /simulation/inject?node_id=&scenario=`**
-- `"hvac_failure"` → `airflow_model.simulate_fan_failure()` + `central_server.record_injection()`
+- `"hvac_failure"` → `node.inject_hvac_failure(duration_seconds=40)` + `central_server.record_injection()`
+  - Ramped: airflow linearly drops over 15 steps, holds at 0 for remainder. Profiled 2026-03-27, confirmed detectable.
 - `"thermal_spike"` → `node.inject_thermal_spike()` + `central_server.record_injection()`
+- `"coolant_leak"` → `node.inject_coolant_leak()` + `central_server.record_injection()`
+  - Humidity rises 2.5% RH/step for 20 steps, capped at 85.0 % RH
 - `"reset"` → `airflow_model.reset()` + `node.reset_anomaly_state()`
 - Returns `{status, node, scenario}` on success or `{error}` if node_id unknown
 
-**Imports:** `fastapi`, `starlette.websockets`, `asyncio`, `time`, `json`, and all backend simulation/ml modules
+**Imports:** `fastapi`, `fastapi.responses.JSONResponse`, `starlette.websockets`, `asyncio`, `time`, `json`, `typing.Optional`, and all backend simulation/ml modules
 **Imported by:** nothing (entry point via `uvicorn`)
 
 ---
@@ -289,10 +307,20 @@
 - Expected keys: `seq_id, node_id, injection_timestamp, edge_detection_ts, central_detection_ts, edge_latency_ms, central_latency_ms, detection_source, bytes_edge, bytes_central`
 - On exception: silent print, does not re-raise
 
+**`get_anomaly_events() → list`**
+- `SELECT * FROM anomaly_events ORDER BY injection_timestamp DESC`
+- Uses `sqlite3.Row` as row factory → returns `list[dict]`
+- On exception: prints error and returns `[]`
+
+**`get_telemetry_range(node_id: str, start: float, end: float) → list`**
+- `SELECT * FROM telemetry WHERE node_id = ? AND timestamp >= ? AND timestamp <= ? ORDER BY timestamp ASC`
+- Uses `sqlite3.Row` as row factory → returns `list[dict]`
+- On exception: prints error and returns `[]`
+
 Uses `check_same_thread=False` on all connections (safe for async FastAPI).
 
 **Imports:** `sqlite3`, `pathlib.Path`
-**Imported by:** `backend/api.py`
+**Imported by:** `backend/api.py` (`init_db`, `insert_telemetry`, `insert_anomaly_event`, `get_anomaly_events`, `get_telemetry_range`, `DB_PATH`)
 
 ---
 
@@ -319,8 +347,13 @@ None.
 | `rng` | `random.Random` | seeded | Node-level RNG |
 | `spike_remaining_steps` | `int` | `0` | Steps remaining in thermal spike |
 | `cpu_load_override` | `float \| None` | `None` | Fixed CPU load during spike |
-| `hvac_lag_steps` | `int` | `0` | Steps HVAC remains frozen |
+| `hvac_lag_steps` | `int` | `0` | Steps HVAC remains frozen (thermal spike path) |
 | `_frozen_airflow` | `float \| None` | `None` | Airflow locked during HVAC lag |
+| `hvac_failure_remaining_steps` | `int` | `0` | Steps remaining in ramped HVAC failure |
+| `hvac_failure_total_steps` | `int` | `0` | Total duration of active HVAC failure |
+| `coolant_leak_active` | `bool` | `False` | Whether a coolant leak is in progress |
+| `coolant_leak_remaining_steps` | `int` | `0` | Steps remaining in the leak ramp |
+| `coolant_leak_base_humidity` | `float` | `0.0` | Humidity value at leak injection time |
 | `recent_anomaly_flags` | `deque` | `deque(maxlen=20)` | Rolling anomaly flag window |
 | `anomaly_persistence_steps` | `int` | `20` | Persistence window length |
 | `cpu_load_state` | `float` | `0.5` | AR(1) process state |
@@ -339,6 +372,17 @@ None.
 - `hvac_lag_steps = lag_seconds`
 - `_frozen_airflow = airflow_model.current_flow * 0.15`
 
+**`inject_hvac_failure(duration_seconds=40)`**
+- Sets `hvac_failure_remaining_steps = duration_seconds` and `hvac_failure_total_steps = duration_seconds`
+- In `step()`: linearly ramps airflow down to 0 over the first 15 steps (`ramp_ratio = min(1.0, elapsed/15)`), then holds at 0 for the remainder
+- Keeps `air_roc` non-zero for ~25 steps, making the anomaly signal detectable by the sliding window extractor
+- Profiled 2026-03-27 (`test_hvac_ramp_feasibility.py`): 15-step anomaly streak, min score 0.073 (threshold 0.15)
+
+**`inject_coolant_leak()`**
+- Sets `coolant_leak_active = True`, `coolant_leak_remaining_steps = 20`, `coolant_leak_base_humidity = humidity_model.current_humidity`
+- In `step()` (applied after physics, before ML): humidity overridden to `min(85.0, base + 2.5 * (20 - remaining_steps))`
+  - Ramps for 20 steps (+2.5% RH/step from base), then holds at `min(85.0, base + 50.0)`
+
 **`_generate_cpu_load() → float`**
 - If `spike_remaining_steps > 0`: decrement counter, return `cpu_load_override`
 - Else: AR(1) — `cpu_load_state = 0.95 * cpu_load_state + 0.05 * 0.5 + rng.gauss(0, 0.02)`, clamped to `[0.1, 0.9]`
@@ -346,11 +390,15 @@ None.
 
 **`step() → dict`**
 1. `cpu_load = _generate_cpu_load()`
-2. Airflow: if `hvac_lag_steps > 0` → use `_frozen_airflow` (decrements counter); else `airflow_model.step(temperature=last_temp)`
+2. Airflow (priority order):
+   - If `hvac_failure_remaining_steps > 0`: compute `ramp_ratio = min(1.0, elapsed/15.0)`, set `airflow_model.current_flow = nominal_flow * (1 - ramp_ratio)`, decrement counter
+   - Elif `hvac_lag_steps > 0`: use `_frozen_airflow`, decrement counter (thermal spike HVAC lag path)
+   - Else: `airflow_model.step(temperature=last_temp)`
 3. `airflow_ratio = current_airflow / airflow_model.nominal_flow`
 4. `new_temp = thermal_model.step(cpu_load, airflow_ratio=airflow_ratio)`
 5. `humidity = humidity_model.step(temperature=new_temp)`
-6. `feature_extractor.add_point({temperature, airflow, humidity, cpu_load})`
+6. Coolant leak override (if active): replaces `humidity` with ramped value before ML inference
+7. `feature_extractor.add_point({temperature, airflow, humidity, cpu_load})`
 7. If window ready: `result = anomaly_model.predict(feature_extractor.extract_features())`; else `{anomaly_score: None, is_anomaly: None}`
 8. `recent_anomaly_flags.append(result["is_anomaly"])`
 9. `persistent_anomaly = any(f is True for f in recent_anomaly_flags)`
@@ -570,7 +618,10 @@ Only reference: `backend/tests/test_environment_model.py`.
 **`predict(feature_vector: List[float]) → Dict[str, Any]`**
 - `scaled = scaler.transform([feature_vector])`
 - `score = float(model.decision_function(scaled)[0])`
-- `is_anomaly = bool(model.predict(scaled)[0] == -1)` — IsolationForest returns +1 (normal) or -1 (anomaly)
+- `is_anomaly = float(score) < 0.15` — **custom threshold, not `model.offset_`**
+  - Profiled 2026-03-27 (`test_clean_baseline_profile.py`): clean baseline floor = 0.2275 (11σ above threshold)
+  - HVAC failure minimum detectable score: 0.082; Coolant leak minimum: 0.070
+  - Avoids retraining while enabling detection of the new ramped and coolant scenarios
 - Returns `{"anomaly_score": score, "is_anomaly": is_anomaly}`
 
 **Module-level alias:** `AnomalyModel = ModelLoader` (backward compatibility)
@@ -596,7 +647,7 @@ These files are used to produce `models/model_v2_hybrid_real.pkl` and `models/sc
 
 ### `backend/tests/` — Unit and Integration Tests
 
-7 pytest files. **Not imported at runtime.** Offline-only.
+12 pytest files. **Not imported at runtime.** Offline-only.
 
 | File | Coverage |
 |---|---|
@@ -607,6 +658,11 @@ These files are used to produce `models/model_v2_hybrid_real.pkl` and `models/sc
 | `test_environment_model.py` | EnvironmentalModel composition (unused in runtime) |
 | `test_feature_extraction.py` | SlidingWindowFeatureExtractor — 12-feature shape and values |
 | `test_model_loader.py` | ModelLoader.predict() — output shape, is_anomaly type, score range |
+| `test_clean_baseline_profile.py` | Profiles normal score distribution; establishes 0.2275 floor used for threshold selection |
+| `test_humidity_feasibility.py` | Feasibility check — humidity signal detectability under normal conditions |
+| `test_humidity_feature_analysis.py` | Detailed feature analysis of humidity signal across window fills |
+| `test_hvac_feasibility.py` | Validates that HVAC anomaly signal is detectable by the current model |
+| `test_hvac_ramp_feasibility.py` | Profiles `inject_hvac_failure()` ramp; confirms 15-step anomaly streak, min score 0.073 |
 
 ---
 
@@ -623,6 +679,52 @@ Manual smoke test for database schema and insert operations. Not integrated into
 ### `app/page.tsx`
 
 **Purpose:** Root page component. Owns all application state. Renders the full dashboard: header, sidebar controls, node gauges, alerts feed, central/edge comparison panel, and node grid.
+
+#### New Types (defined in `page.tsx`, not `types.ts`)
+
+```ts
+AnomalyEvent {
+  id: number
+  seq_id: number
+  node_id: string
+  injection_timestamp: number | null
+  edge_detection_ts: number | null
+  central_detection_ts: number | null
+  edge_latency_ms: number | null
+  central_latency_ms: number | null
+  detection_source: string | null
+  bytes_edge: number | null
+  bytes_central: number | null
+}
+
+SummaryRow {
+  detection_source: string | null
+  sample_count: number
+  avg_edge_ms: number | null
+  avg_central_ms: number | null
+  avg_delta_ms: number | null
+  min_delta_ms: number | null
+  max_delta_ms: number | null
+}
+```
+
+#### `HistoryTab` Component (defined in `page.tsx`)
+
+**Purpose:** Standalone component rendered in the History tab. Shows all recorded anomaly events from the DB plus aggregate stats.
+
+**State:** `events: AnomalyEvent[]`, `summary: SummaryRow | null`, `loading: boolean`, `fetchError: string | null`
+
+**Fetches on mount** (via `useEffect`):
+- `GET /db/history/events` → populates `events`
+- `GET /db/anomaly_summary` → populates `summary` (first row only)
+
+**Refresh button** triggers `fetchEvents()` manually.
+
+**Renders:**
+- 6 stat cards: Total Events, Avg Edge Latency, Avg Central Latency, Avg Delta, Min Delta, Max Delta
+- If no events: "No anomaly events recorded yet" message
+- MUI `Table` with columns: Node ID, Detection Source, Injection Time, Edge Latency (ms), Central Latency (ms), Delta (ms), Bytes Edge, Bytes Central
+- Inline fetches — not wrapped in `api.ts`
 
 #### State Variables
 
@@ -641,6 +743,7 @@ Manual smoke test for database schema and insert operations. Not integrated into
 | `draggingObstructionNodeId` | `string \| null` | `null` | Locks obstruction slider from WS updates |
 | `draggingHumidityNodeId` | `string \| null` | `null` | Locks humidity slider from WS updates |
 | `centralStatus` | `Record<string, CentralNodeStatus>` | `{}` | Central vs edge latency/bandwidth data |
+| `activeTab` | `number` | `0` | Selected tab index (0 = Live, 1 = History) |
 | `prevMlReady` (ref) | `boolean` | `false` | Tracks ML window_ready transition |
 | `prevAnomalyRef` (ref) | `Record<string, boolean>` | `{}` | Tracks per-node anomaly state transition |
 
@@ -704,6 +807,7 @@ Manual smoke test for database schema and insert operations. Not integrated into
 | POST | `resetAirflow()` | `/api/controls/reset_airflow` | Button click |
 | POST | `setHumidity()` | `/api/controls/set_humidity` | Slider release |
 | POST | `injectThermalSpike()` | `/simulation/inject` | Button click |
+| POST | inline `fetch` | `/simulation/inject?scenario=coolant_leak` | Button click |
 
 #### Render Structure
 
@@ -711,22 +815,27 @@ Manual smoke test for database schema and insert operations. Not integrated into
 <Box> full viewport, dark bg, flex column
   <Box> header bar
     Title | ML status chip (ANOMALY / ML Ready / ML Warming) | connection status
-  <Box> flex row, main content
-    <Box> sidebar 320px fixed
-      Node selection (3 buttons: node-1, node-2, node-3)
-      Obstruction slider (0–100%)
-      Fan Failure button
-      Reset Airflow button
-      Humidity slider (0–100%)
-      Thermal Spike button
-      Reload ML button
-      mlError display
-      controlsError display
-    <Box> right panel, flex grow
-      <NodeGauges> for selectedNodeId
-      <AlertsFeed>
-      Central vs Edge comparison table (latency + bandwidth per node)
-      <NodeGrid>
+  <Tabs> — Tab 0: Live | Tab 1: History
+  [Tab 0 — Live]
+    <Box> flex row, main content
+      <Box> sidebar 320px fixed
+        Node selection (3 buttons: node-1, node-2, node-3)
+        Obstruction slider (0–100%)
+        Fan Failure button
+        Reset Airflow button
+        Humidity slider (0–100%)
+        Thermal Spike button
+        Coolant Leak button          ← new
+        Reload ML button
+        mlError display
+        controlsError display
+      <Box> right panel, flex grow
+        <NodeGauges> for selectedNodeId
+        <AlertsFeed>
+        Central vs Edge comparison table (latency + bandwidth per node)
+        <NodeGrid>
+  [Tab 1 — History]
+    <HistoryTab> — stat cards + anomaly events table
 ```
 
 ---
@@ -884,9 +993,11 @@ CentralNodeStatus (inferred from page.tsx usage) {
 | POST | `/api/controls/set_humidity` | JSON `{node_id, humidity}` | `{ok, node_id, humidity}` |
 | GET | `/central/status` | — | `{ok, nodes: {[nodeId]: CentralNodeStatus}}` |
 | GET | `/db/anomaly_summary` | — | `{ok, summary: [{detection_source, sample_count, avg_edge_ms, avg_central_ms, avg_delta_ms, min_delta_ms, max_delta_ms}]}` |
+| GET | `/db/history/events` | — | `{ok, events: AnomalyEvent[]}` ordered by `injection_timestamp DESC` |
+| GET | `/db/history/telemetry` | Query params `?node_id=&start=&end=` | `{ok, rows: TelemetryRow[]}` or `400 {ok: false, error}` |
 | POST | `/simulation/inject` | Query params `?node_id=&scenario=` | `{status, node, scenario}` or `{error}` |
 
-**Valid `scenario` values:** `"hvac_failure"`, `"thermal_spike"`, `"reset"`
+**Valid `scenario` values:** `"hvac_failure"`, `"thermal_spike"`, `"coolant_leak"`, `"reset"`
 
 ### WebSocket Endpoint
 
@@ -1001,7 +1112,7 @@ CentralNodeStatus (inferred from page.tsx usage) {
 **Write — edge event:** `insert_anomaly_event()` called when `raw["is_anomaly"]` transitions False→True
 **Write — central event:** `insert_anomaly_event()` called when central persistent anomaly transitions False→True
 
-**Read:** `GET /db/anomaly_summary` executes:
+**Read — `GET /db/anomaly_summary`** executes:
 ```sql
 SELECT
   detection_source,
@@ -1014,6 +1125,10 @@ SELECT
 FROM anomaly_events
 GROUP BY detection_source
 ```
+
+**Read — `GET /db/history/events`:** `SELECT * FROM anomaly_events ORDER BY injection_timestamp DESC` via `get_anomaly_events()`
+
+**Read — `GET /db/history/telemetry`:** `SELECT * FROM telemetry WHERE node_id = ? AND timestamp >= ? AND timestamp <= ? ORDER BY timestamp ASC` via `get_telemetry_range()`
 
 **Note on `bytes_edge` vs `bytes_central`:** These are not directly comparable.
 - `bytes_edge`: snapshot size of one frame (temperature + humidity + airflow + cpu_load + anomaly_score + is_anomaly)
@@ -1151,8 +1266,8 @@ feature_report.csv      (output artifact)
 ---
 
 **11. `/simulation/inject` endpoint not formally specified in the SRS**
-- The endpoint with scenarios `"hvac_failure"`, `"thermal_spike"`, `"reset"` is fully implemented
-- `Docs/Thermal_Spike_Scenario.md` documents the physics behavior
+- The endpoint with scenarios `"hvac_failure"`, `"thermal_spike"`, `"coolant_leak"`, `"reset"` is fully implemented
+- `Docs/Thermal_Spike_Scenario.md` documents thermal_spike physics; no equivalent doc exists for coolant_leak
 - No SRS requirement formally specifies this injection interface as a system function
 - The inject → record_injection → latency measurement pipeline is entirely absent from formal requirements
 
@@ -1168,6 +1283,29 @@ feature_report.csv      (output artifact)
 
 **13. `/db/anomaly_summary` endpoint absent from `application_architecture.md`**
 - Added in the most recent commit; the architecture document predates it and does not mention it
+
+---
+
+**14. Anomaly detection threshold changed — `CLAUDE.md` references stale value**
+- `CLAUDE.md` and old docs state threshold is `model.offset_` ≈ `−0.6134`
+- Reality since 2026-03-27: `is_anomaly = float(score) < 0.15` (a fixed positive threshold)
+- The `model.predict()` call (which uses `offset_`) is no longer used for the anomaly decision
+- Any document citing `−0.6134` or `model.offset_` as the operative threshold is stale
+
+---
+
+**15. `POST /api/controls/fan_failure` behavior changed — docs still describe instant snap**
+- Previous behavior: `airflow_model.simulate_fan_failure()` — instant obstruction to 100%
+- Current behavior: `node.inject_hvac_failure(duration_seconds=40)` — ramped over 15 steps
+- `central_server.record_injection()` is now also called (was missing before), enabling latency measurement from this control endpoint
+- Any documentation describing fan_failure as an instantaneous event is stale
+
+---
+
+**16. `HistoryTab` new types (`AnomalyEvent`, `SummaryRow`) defined in `page.tsx`, not `types.ts`**
+- All other shared types live in `app/lib/types.ts`
+- `AnomalyEvent` and `SummaryRow` are defined inline in `page.tsx` as local types for `HistoryTab`
+- If `HistoryTab` is ever split into its own component file, these types will need to be moved to `types.ts`
 
 ---
 
