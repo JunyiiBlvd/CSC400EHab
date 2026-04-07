@@ -28,9 +28,9 @@ def process_cold_source():
     airflow = (power_clipped / power_clipped.median()) * 2.5
     airflow = airflow.clip(lower=1.5, upper=4.0)
     
-    # humidity = sampled from N(45.0, 2.0) with seed 99
+    # humidity = sampled from N(38.63, 7.21) matching MIT CSAIL Intel Lab stats
     np.random.seed(99)
-    humidity = np.random.normal(45.0, 2.0, len(df))
+    humidity = np.random.normal(38.63, 7.21, len(df))
     
     # Create telemetry rows
     telemetry = pd.DataFrame({

@@ -75,11 +75,11 @@ def validate_on_real_anomalies():
                 feat = extractor.extract_features()
                 all_features.append(feat)
                 
-                # Inference
+                # Inference — matches model_loader.py deployed threshold
                 feat_scaled = scaler.transform([feat])
                 score = model.decision_function(feat_scaled)[0]
-                is_anomaly = model.predict(feat_scaled)[0] == -1
-                
+                is_anomaly = score < 0.15
+
                 scores.append(score)
                 predictions.append(is_anomaly)
 

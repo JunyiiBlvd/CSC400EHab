@@ -26,9 +26,9 @@ def generate_cold_source_features():
     # temperature
     df['temperature'] = df['Inlet_Temperature(°C)']
     
-    # humidity: sample from N(45, 2)
+    # humidity: sample from N(38.63, 7.21) matching MIT CSAIL Intel Lab stats
     np.random.seed(99)
-    df['humidity'] = np.random.normal(45.0, 2.0, len(df))
+    df['humidity'] = np.random.normal(38.63, 7.21, len(df))
     
     extractor = SlidingWindowFeatureExtractor(window_size=10)
     features_list = []
