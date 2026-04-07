@@ -20,7 +20,8 @@ export default function NodeGauges({
 }) {
   const showHumidity = typeof humidity === "number";
   const showAirflow = typeof airflow === "number";
-  const cols = showHumidity || showAirflow ? "repeat(4, 1fr)" : "repeat(2, 1fr)";
+  const cols =
+    showHumidity || showAirflow ? "repeat(4, 1fr)" : "repeat(2, 1fr)";
 
   return (
     <Paper
@@ -32,9 +33,20 @@ export default function NodeGauges({
         color: "white",
       }}
     >
-      <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between", mb: 2 }}>
+      <Box
+        sx={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          mb: 2,
+        }}
+      >
         <Typography variant="h6">Live Gauges · {nodeId}</Typography>
-        {isAnomaly ? <Chip label="ANOMALY" color="error" size="small" /> : <Chip label="Normal" size="small" />}
+        {isAnomaly ? (
+          <Chip label="ANOMALY" color="error" size="small" />
+        ) : (
+          <Chip label="Normal" size="small" />
+        )}
       </Box>
 
       <Box sx={{ display: "grid", gridTemplateColumns: cols, gap: 2 }}>
@@ -52,7 +64,12 @@ export default function NodeGauges({
           <Typography variant="caption" sx={{ opacity: 0.75 }}>
             CPU (%)
           </Typography>
-          <Gauge value={cpuLoad * 100} valueMin={0} valueMax={100} height={150} />
+          <Gauge
+            value={cpuLoad * 100}
+            valueMin={0}
+            valueMax={100}
+            height={150}
+          />
           <Typography variant="body2" sx={{ mt: 0.5, opacity: 0.85 }}>
             {(cpuLoad * 100).toFixed(1)}%
           </Typography>
@@ -75,7 +92,7 @@ export default function NodeGauges({
             <Typography variant="caption" sx={{ opacity: 0.75 }}>
               Airflow
             </Typography>
-            <Gauge value={airflow!} valueMin={0} valueMax={1} height={150} />
+            <Gauge value={airflow!} valueMin={0} valueMax={2.5} height={150} />
             <Typography variant="body2" sx={{ mt: 0.5, opacity: 0.85 }}>
               {airflow!.toFixed(2)}
             </Typography>

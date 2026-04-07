@@ -1,9 +1,21 @@
 "use client";
 
 import {
-  Box, Paper, Typography, Slider, Button, Stack, Chip,
-  Tabs, Tab,
-  Table, TableBody, TableCell, TableContainer, TableHead, TableRow,
+  Box,
+  Paper,
+  Typography,
+  Slider,
+  Button,
+  Stack,
+  Chip,
+  Tabs,
+  Tab,
+  Table,
+  TableBody,
+  TableCell,
+  TableContainer,
+  TableHead,
+  TableRow,
 } from "@mui/material";
 import { useEffect, useMemo, useRef, useState } from "react";
 
@@ -11,7 +23,13 @@ import NodeGrid from "./components/NodeGrid";
 import NodeGauges from "./components/NodeGauges";
 import AlertsFeed from "./components/AlertsFeed";
 
-import type { AlertItem, HistoryByNode, MlStatus, Telemetry, TelemetryByNode } from "./lib/types";
+import type {
+  AlertItem,
+  HistoryByNode,
+  MlStatus,
+  Telemetry,
+  TelemetryByNode,
+} from "./lib/types";
 import {
   fetchMlStatus,
   reloadMlModel,
@@ -86,7 +104,7 @@ function HistoryTab() {
 
   useEffect(() => {
     fetchEvents();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   function fmtTs(ts: number | null): string {
@@ -107,27 +125,52 @@ function HistoryTab() {
   }
 
   const statCards = [
-    { label: "Total Events",        value: summary ? String(summary.sample_count) : "—" },
-    { label: "Avg Edge Latency",    value: fmtStat(summary?.avg_edge_ms) },
+    {
+      label: "Total Events",
+      value: summary ? String(summary.sample_count) : "—",
+    },
+    { label: "Avg Edge Latency", value: fmtStat(summary?.avg_edge_ms) },
     { label: "Avg Central Latency", value: fmtStat(summary?.avg_central_ms) },
-    { label: "Avg Delta",           value: fmtStat(summary?.avg_delta_ms) },
-    { label: "Min Delta",           value: fmtStat(summary?.min_delta_ms) },
-    { label: "Max Delta",           value: fmtStat(summary?.max_delta_ms) },
+    { label: "Avg Delta", value: fmtStat(summary?.avg_delta_ms) },
+    { label: "Min Delta", value: fmtStat(summary?.min_delta_ms) },
+    { label: "Max Delta", value: fmtStat(summary?.max_delta_ms) },
   ];
 
   return (
     <Box>
-      <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between", mb: 2 }}>
+      <Box
+        sx={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          mb: 2,
+        }}
+      >
         <Typography variant="h6">Anomaly Event History</Typography>
-        <Button variant="outlined" onClick={fetchEvents} disabled={loading} size="small">
+        <Button
+          variant="outlined"
+          onClick={fetchEvents}
+          disabled={loading}
+          size="small"
+        >
           {loading ? "Loading..." : "Refresh"}
         </Button>
       </Box>
 
-      <Box sx={{ display: "grid", gridTemplateColumns: "repeat(6, 1fr)", gap: 1.5, mb: 3 }}>
+      <Box
+        sx={{
+          display: "grid",
+          gridTemplateColumns: "repeat(6, 1fr)",
+          gap: 1.5,
+          mb: 3,
+        }}
+      >
         {statCards.map(({ label, value }) => (
           <Paper key={label} sx={statCardStyle}>
-            <Typography variant="caption" sx={{ opacity: 0.6, display: "block", mb: 0.75, lineHeight: 1.3 }}>
+            <Typography
+              variant="caption"
+              sx={{ opacity: 0.6, display: "block", mb: 0.75, lineHeight: 1.3 }}
+            >
               {label}
             </Typography>
             <Typography variant="h5" sx={{ fontWeight: 700 }}>
@@ -146,13 +189,17 @@ function HistoryTab() {
       {!loading && events.length === 0 ? (
         <Box sx={{ textAlign: "center", mt: 10, opacity: 0.55 }}>
           <Typography variant="body1">
-            No anomaly events recorded yet. Run a simulation and inject an anomaly to see history.
+            No anomaly events recorded yet. Run a simulation and inject an
+            anomaly to see history.
           </Typography>
         </Box>
       ) : (
         <TableContainer
           component={Paper}
-          sx={{ bgcolor: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.12)" }}
+          sx={{
+            bgcolor: "rgba(255,255,255,0.04)",
+            border: "1px solid rgba(255,255,255,0.12)",
+          }}
         >
           <Table size="small">
             <TableHead>
@@ -169,13 +216,26 @@ function HistoryTab() {
             </TableHead>
             <TableBody>
               {events.map((ev) => (
-                <TableRow key={ev.id} sx={{ "&:hover": { bgcolor: "rgba(255,255,255,0.06)" } }}>
+                <TableRow
+                  key={ev.id}
+                  sx={{ "&:hover": { bgcolor: "rgba(255,255,255,0.06)" } }}
+                >
                   <TableCell sx={tdStyle}>{ev.node_id}</TableCell>
-                  <TableCell sx={tdStyle}>{ev.detection_source ?? "—"}</TableCell>
-                  <TableCell sx={tdStyle}>{fmtTs(ev.injection_timestamp)}</TableCell>
-                  <TableCell sx={tdStyle}>{fmtMs(ev.edge_latency_ms)}</TableCell>
-                  <TableCell sx={tdStyle}>{fmtMs(ev.central_latency_ms)}</TableCell>
-                  <TableCell sx={tdStyle}>{fmtDelta(ev.edge_latency_ms, ev.central_latency_ms)}</TableCell>
+                  <TableCell sx={tdStyle}>
+                    {ev.detection_source ?? "—"}
+                  </TableCell>
+                  <TableCell sx={tdStyle}>
+                    {fmtTs(ev.injection_timestamp)}
+                  </TableCell>
+                  <TableCell sx={tdStyle}>
+                    {fmtMs(ev.edge_latency_ms)}
+                  </TableCell>
+                  <TableCell sx={tdStyle}>
+                    {fmtMs(ev.central_latency_ms)}
+                  </TableCell>
+                  <TableCell sx={tdStyle}>
+                    {fmtDelta(ev.edge_latency_ms, ev.central_latency_ms)}
+                  </TableCell>
                   <TableCell sx={tdStyle}>{ev.bytes_edge ?? "—"}</TableCell>
                   <TableCell sx={tdStyle}>{ev.bytes_central ?? "—"}</TableCell>
                 </TableRow>
@@ -198,10 +258,18 @@ export default function Home() {
   const [controlsError, setControlsError] = useState<string | null>(null);
   const [mlStatus, setMlStatus] = useState<MlStatus | null>(null);
   const [mlError, setMlError] = useState<string | null>(null);
-  const [obstructionDraftByNode, setObstructionDraftByNode] = useState<Record<string, number>>({});
-  const [humidityDraftByNode, setHumidityDraftByNode] = useState<Record<string, number>>({});
-  const [draggingObstructionNodeId, setDraggingObstructionNodeId] = useState<string | null>(null);
-  const [draggingHumidityNodeId, setDraggingHumidityNodeId] = useState<string | null>(null);
+  const [obstructionDraftByNode, setObstructionDraftByNode] = useState<
+    Record<string, number>
+  >({});
+  const [humidityDraftByNode, setHumidityDraftByNode] = useState<
+    Record<string, number>
+  >({});
+  const [draggingObstructionNodeId, setDraggingObstructionNodeId] = useState<
+    string | null
+  >(null);
+  const [draggingHumidityNodeId, setDraggingHumidityNodeId] = useState<
+    string | null
+  >(null);
   const prevMlReady = useRef<boolean>(false);
   const draggingObstructionNodeIdRef = useRef<string | null>(null);
   const draggingHumidityNodeIdRef = useRef<string | null>(null);
@@ -213,15 +281,21 @@ export default function Home() {
     const reasons: string[] = [];
 
     if (telemetry.cpu_load > 0.85) {
-      reasons.push("CPU elevated (" + (telemetry.cpu_load * 100).toFixed(0) + "%)");
+      reasons.push(
+        "CPU elevated (" + (telemetry.cpu_load * 100).toFixed(0) + "%)",
+      );
     }
 
     if (telemetry.temperature > 21.5) {
-      reasons.push("Temperature rising (" + telemetry.temperature.toFixed(2) + "°C)");
+      reasons.push(
+        "Temperature rising (" + telemetry.temperature.toFixed(2) + "°C)",
+      );
     }
 
     if (telemetry.airflow < 1.5 && telemetry.airflow > 0.1) {
-      reasons.push("Airflow degraded (" + telemetry.airflow.toFixed(2) + " units)");
+      reasons.push(
+        "Airflow degraded (" + telemetry.airflow.toFixed(2) + " units)",
+      );
     }
 
     if (telemetry.airflow <= 0.1) {
@@ -229,11 +303,15 @@ export default function Home() {
     }
 
     if (telemetry.humidity > 55) {
-      reasons.push("Humidity elevated (" + telemetry.humidity.toFixed(1) + "%)");
+      reasons.push(
+        "Humidity elevated (" + telemetry.humidity.toFixed(1) + "%)",
+      );
     }
 
     if (reasons.length === 0) {
-      reasons.push("Subtle multi-signal pattern — no single threshold exceeded");
+      reasons.push(
+        "Subtle multi-signal pattern — no single threshold exceeded",
+      );
     }
 
     return reasons.join(" · ");
@@ -271,7 +349,7 @@ export default function Home() {
                   timestamp: ts,
                 },
               ];
-            })
+            }),
           ) as TelemetryByNode;
 
           setTelemetryByNode(normalizedFrame);
@@ -360,7 +438,9 @@ export default function Home() {
         }
       } catch (e: unknown) {
         if (!cancelled) {
-          setMlError(e instanceof Error ? e.message : "Failed to load ML status");
+          setMlError(
+            e instanceof Error ? e.message : "Failed to load ML status",
+          );
         }
       }
     }
@@ -385,21 +465,30 @@ export default function Home() {
 
       if (!wasAnomaly && isAnomaly) {
         const reason = getAnomalyReason(telemetry);
-        const scoreStr = typeof telemetry.anomaly_score === 'number'
-          ? telemetry.anomaly_score.toFixed(4) : 'N/A';
+        const scoreStr =
+          typeof telemetry.anomaly_score === "number"
+            ? telemetry.anomaly_score.toFixed(4)
+            : "N/A";
         newAlerts.push({
-          id: 'ml-anomaly-' + nodeId + '-' + telemetry.timestamp,
+          id: "ml-anomaly-" + nodeId + "-" + telemetry.timestamp,
           ts: (() => {
             try {
               const d = new Date(Number(telemetry.timestamp) * 1000);
-              return isNaN(d.getTime()) ? new Date().toISOString() : d.toISOString();
+              return isNaN(d.getTime())
+                ? new Date().toISOString()
+                : d.toISOString();
             } catch {
               return new Date().toISOString();
             }
           })(),
-          level: 'crit',
-          message: 'ML Anomaly Detected on ' + nodeId.toUpperCase() +
-                   ' | Score: ' + scoreStr + ' | ' + reason,
+          level: "crit",
+          message:
+            "ML Anomaly Detected on " +
+            nodeId.toUpperCase() +
+            " | Score: " +
+            scoreStr +
+            " | " +
+            reason,
         });
       }
 
@@ -420,7 +509,9 @@ export default function Home() {
     bytes_central: number | null;
     last_updated: number | null;
   };
-  const [centralStatus, setCentralStatus] = useState<Record<string, CentralNodeStatus>>({});
+  const [centralStatus, setCentralStatus] = useState<
+    Record<string, CentralNodeStatus>
+  >({});
 
   useEffect(() => {
     let cancelled = false;
@@ -442,8 +533,11 @@ export default function Home() {
   }, []);
 
   const selectedObstructionValue =
-    obstructionDraftByNode[selectedNodeId] ?? selectedTelemetry?.obstruction_ratio ?? 0;
-  const selectedHumidityValue = humidityDraftByNode[selectedNodeId] ?? selectedTelemetry?.humidity ?? 45;
+    obstructionDraftByNode[selectedNodeId] ??
+    selectedTelemetry?.obstruction_ratio ??
+    0;
+  const selectedHumidityValue =
+    humidityDraftByNode[selectedNodeId] ?? selectedTelemetry?.humidity ?? 45;
 
   const summaryText = useMemo(() => {
     if (apiError) return `Backend offline: ${apiError}`;
@@ -457,9 +551,14 @@ export default function Home() {
       setControlsError(null);
       setObstructionDraftByNode((prev) => ({ ...prev, [nodeId]: ratio }));
       const res = await setAirflowObstruction(nodeId, ratio);
-      setObstructionDraftByNode((prev) => ({ ...prev, [nodeId]: res.obstruction_ratio }));
+      setObstructionDraftByNode((prev) => ({
+        ...prev,
+        [nodeId]: res.obstruction_ratio,
+      }));
     } catch (e: unknown) {
-      setControlsError(e instanceof Error ? e.message : "Failed to update airflow obstruction");
+      setControlsError(
+        e instanceof Error ? e.message : "Failed to update airflow obstruction",
+      );
     } finally {
       draggingObstructionNodeIdRef.current = null;
       setDraggingObstructionNodeId(null);
@@ -470,9 +569,14 @@ export default function Home() {
     try {
       setControlsError(null);
       const res = await simulateFanFailure(selectedNodeId);
-      setObstructionDraftByNode((prev) => ({ ...prev, [selectedNodeId]: res.obstruction_ratio }));
+      setObstructionDraftByNode((prev) => ({
+        ...prev,
+        [selectedNodeId]: res.obstruction_ratio,
+      }));
     } catch (e: unknown) {
-      setControlsError(e instanceof Error ? e.message : "Failed to simulate fan failure");
+      setControlsError(
+        e instanceof Error ? e.message : "Failed to simulate fan failure",
+      );
     }
   }
 
@@ -480,9 +584,14 @@ export default function Home() {
     try {
       setControlsError(null);
       const res = await resetAirflow(selectedNodeId);
-      setObstructionDraftByNode((prev) => ({ ...prev, [selectedNodeId]: res.obstruction_ratio }));
+      setObstructionDraftByNode((prev) => ({
+        ...prev,
+        [selectedNodeId]: res.obstruction_ratio,
+      }));
     } catch (e: unknown) {
-      setControlsError(e instanceof Error ? e.message : "Failed to reset airflow");
+      setControlsError(
+        e instanceof Error ? e.message : "Failed to reset airflow",
+      );
     }
   }
 
@@ -493,7 +602,9 @@ export default function Home() {
       const res = await setHumidity(nodeId, humidity);
       setHumidityDraftByNode((prev) => ({ ...prev, [nodeId]: res.humidity }));
     } catch (e: unknown) {
-      setControlsError(e instanceof Error ? e.message : "Failed to update humidity");
+      setControlsError(
+        e instanceof Error ? e.message : "Failed to update humidity",
+      );
     } finally {
       draggingHumidityNodeIdRef.current = null;
       setDraggingHumidityNodeId(null);
@@ -526,15 +637,23 @@ export default function Home() {
 
       setAlerts((prev) => [alertThermal, ...prev].slice(0, 10));
     } catch (e: unknown) {
-      setControlsError(e instanceof Error ? e.message : "Failed to inject thermal spike");
+      setControlsError(
+        e instanceof Error ? e.message : "Failed to inject thermal spike",
+      );
     }
   }
 
   async function doInjectCoolantLeak() {
     try {
       setControlsError(null);
-      const params = new URLSearchParams({ node_id: selectedNodeId, scenario: "coolant_leak" });
-      const res = await fetch(`http://localhost:8000/simulation/inject?${params.toString()}`, { method: "POST" });
+      const params = new URLSearchParams({
+        node_id: selectedNodeId,
+        scenario: "coolant_leak",
+      });
+      const res = await fetch(
+        `http://localhost:8000/simulation/inject?${params.toString()}`,
+        { method: "POST" },
+      );
       if (!res.ok) throw new Error(`API error ${res.status}`);
 
       const alertCoolant: AlertItem = {
@@ -546,17 +665,20 @@ export default function Home() {
 
       setAlerts((prev) => [alertCoolant, ...prev].slice(0, 10));
     } catch (e: unknown) {
-      setControlsError(e instanceof Error ? e.message : "Failed to inject coolant leak");
+      setControlsError(
+        e instanceof Error ? e.message : "Failed to inject coolant leak",
+      );
     }
   }
 
-  const anomalyChip = selectedTelemetry?.is_anomaly === true ? (
-    <Chip label="ANOMALY" color="error" size="small" />
-  ) : mlStatus?.window_ready ? (
-    <Chip label="ML Ready" color="success" size="small" />
-  ) : (
-    <Chip label="ML Warming" color="warning" size="small" />
-  );
+  const anomalyChip =
+    selectedTelemetry?.is_anomaly === true ? (
+      <Chip label="ANOMALY" color="error" size="small" />
+    ) : mlStatus?.window_ready ? (
+      <Chip label="ML Ready" color="success" size="small" />
+    ) : (
+      <Chip label="ML Warming" color="warning" size="small" />
+    );
 
   return (
     <Box sx={{ minHeight: "100vh", bgcolor: "#0b1220", color: "white", p: 3 }}>
@@ -580,222 +702,285 @@ export default function Home() {
       </Tabs>
 
       {activeTab === 0 && (
-      <Box sx={{ display: "grid", gridTemplateColumns: "320px 1fr", gap: 2, mt: 2 }}>
-        <Paper sx={panelStyle}>
-          <Typography variant="h6" sx={{ mb: 1 }}>
-            Controls Panel
-          </Typography>
-          <Typography variant="body2" sx={{ opacity: 0.7 }}>
-            Controls apply only to the currently selected node.
-          </Typography>
-
-          <Box sx={{ mt: 2 }}>
-            <Typography variant="caption" sx={{ opacity: 0.7 }}>
-              API status
-            </Typography>
-            <Typography variant="body2" sx={{ mt: 0.5 }}>
-              {apiError ? "Disconnected" : Object.keys(telemetryByNode).length ? "Connected" : "Connecting..."}
-            </Typography>
-          </Box>
-
-          <Box sx={{ mt: 3 }}>
-            <Typography variant="caption" sx={{ opacity: 0.7 }}>
-              Focus node
-            </Typography>
-            <Stack direction="row" spacing={1} sx={{ mt: 1, flexWrap: "wrap" }}>
-              {NODE_IDS.map((nodeId) => (
-                <Button
-                  key={nodeId}
-                  variant={selectedNodeId === nodeId ? "contained" : "outlined"}
-                  onClick={() => setSelectedNodeId(nodeId)}
-                >
-                  {nodeId}
-                </Button>
-              ))}
-            </Stack>
-          </Box>
-
-          <Box sx={{ mt: 2 }}>
-            <Typography variant="body2" sx={{ opacity: 0.9 }}>
-              Selected node: <strong>{selectedNodeId}</strong>
-            </Typography>
-          </Box>
-
-          <Box sx={{ mt: 3 }}>
-            <Typography variant="caption" sx={{ opacity: 0.7 }}>
-              Airflow obstruction (0 = none, 1 = fully blocked)
-            </Typography>
-            <Slider
-              value={selectedObstructionValue}
-              min={0}
-              max={1}
-              step={0.05}
-              onChange={(_, v) => {
-                setDraggingObstructionNodeId(selectedNodeId);
-                draggingObstructionNodeIdRef.current = selectedNodeId;
-                setObstructionDraftByNode((prev) => ({ ...prev, [selectedNodeId]: v as number }));
-              }}
-              onChangeCommitted={(_, v) => applyObstruction(selectedNodeId, v as number)}
-              sx={{ mt: 1 }}
-            />
-            <Typography variant="body2" sx={{ mt: 0.5, opacity: 0.8 }}>
-              {selectedObstructionValue.toFixed(2)} on {selectedNodeId}
-            </Typography>
-            <Stack direction="row" spacing={1} sx={{ mt: 1 }}>
-              <Button variant="contained" onClick={doFanFailure}>Fan failure</Button>
-              <Button variant="outlined" onClick={doResetAirflow}>Reset airflow</Button>
-            </Stack>
-          </Box>
-
-          <Box sx={{ mt: 3 }}>
-            <Typography variant="caption" sx={{ opacity: 0.7 }}>
-              Humidity (%)
-            </Typography>
-            <Slider
-              value={selectedHumidityValue}
-              min={0}
-              max={100}
-              step={1}
-              onChange={(_, v) => {
-                setDraggingHumidityNodeId(selectedNodeId);
-                draggingHumidityNodeIdRef.current = selectedNodeId;
-                setHumidityDraftByNode((prev) => ({ ...prev, [selectedNodeId]: v as number }));
-              }}
-              onChangeCommitted={(_, v) => applyHumidity(selectedNodeId, v as number)}
-              sx={{ mt: 1 }}
-            />
-            <Typography variant="body2" sx={{ mt: 0.5, opacity: 0.8 }}>
-              {selectedHumidityValue.toFixed(1)}% on {selectedNodeId}
-            </Typography>
-            {controlsError && (
-              <Typography variant="body2" sx={{ mt: 1, opacity: 0.85 }}>
-                {controlsError}
-              </Typography>
-            )}
-          </Box>
-
-          <Box sx={{ mt: 3, display: "flex", flexDirection: "column", gap: 1 }}>
-            <Typography variant="caption" sx={{ opacity: 0.7 }}>
-              Anomalies
-            </Typography>
-            <Button variant="contained" color="warning" onClick={doThermalSpike}>
-              Inject Thermal Spike
-            </Button>
-            <Button variant="contained" sx={{ bgcolor: "#3b82f6" }} onClick={doInjectCoolantLeak}>
-              Inject Coolant Leak
-            </Button>
-          </Box>
-
-          <Box sx={{ mt: 3 }}>
-            <Typography variant="caption" sx={{ opacity: 0.7 }}>
-              ML status
-            </Typography>
-            <Typography variant="body2" sx={{ mt: 0.5 }}>
-              {!mlStatus
-                ? "Loading..."
-                : mlStatus.model_loaded
-                ? `Model loaded · window ${mlStatus.points_in_window}/${mlStatus.window_size}${
-                    mlStatus.window_ready ? " · ready" : " · warming up"
-                  }`
-                : "Model not loaded"}
-            </Typography>
-            {mlStatus?.model_load_error && (
-              <Typography variant="body2" sx={{ mt: 1, opacity: 0.85 }}>
-                {mlStatus.model_load_error}
-              </Typography>
-            )}
-            {mlError && (
-              <Typography variant="body2" sx={{ mt: 1, opacity: 0.85 }}>
-                {mlError}
-              </Typography>
-            )}
-            <Button variant="outlined" onClick={doReloadMl} sx={{ mt: 1 }}>
-              Reload ML model
-            </Button>
-          </Box>
-        </Paper>
-
-        <Box sx={{ display: "grid", gap: 2 }}>
-          {selectedTelemetry && (
-            <NodeGauges
-              temperature={selectedTelemetry.temperature}
-              cpuLoad={selectedTelemetry.cpu_load}
-              humidity={selectedTelemetry.humidity}
-              airflow={selectedTelemetry.airflow}
-              isAnomaly={selectedTelemetry.is_anomaly === true}
-              nodeId={selectedTelemetry.node_id}
-            />
-          )}
-
-          <AlertsFeed alerts={alerts} />
-
+        <Box
+          sx={{
+            display: "grid",
+            gridTemplateColumns: "320px 1fr",
+            gap: 2,
+            mt: 2,
+          }}
+        >
           <Paper sx={panelStyle}>
-            <Typography variant="h6" sx={{ mb: 2 }}>
-              Central vs Edge Comparison
+            <Typography variant="h6" sx={{ mb: 1 }}>
+              Controls Panel
             </Typography>
-            <Box sx={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 2 }}>
-              {NODE_IDS.map((nodeId) => {
-                const s = centralStatus[nodeId];
-                const fmt = (v: number | null | undefined, unit: string) =>
-                  v == null ? "Waiting for anomaly..." : `${v.toFixed(2)} ${unit}`;
-                const bwRatio =
-                  s?.bytes_edge != null && s.bytes_edge > 0 && s?.bytes_central != null
-                    ? ((s.bytes_central / s.bytes_edge) * 100).toFixed(1) + "%"
-                    : "Waiting for anomaly...";
-                return (
-                  <Box
+            <Typography variant="body2" sx={{ opacity: 0.7 }}>
+              Controls apply only to the currently selected node.
+            </Typography>
+
+            <Box sx={{ mt: 2 }}>
+              <Typography variant="caption" sx={{ opacity: 0.7 }}>
+                API status
+              </Typography>
+              <Typography variant="body2" sx={{ mt: 0.5 }}>
+                {apiError
+                  ? "Disconnected"
+                  : Object.keys(telemetryByNode).length
+                    ? "Connected"
+                    : "Connecting..."}
+              </Typography>
+            </Box>
+
+            <Box sx={{ mt: 3 }}>
+              <Typography variant="caption" sx={{ opacity: 0.7 }}>
+                Focus node
+              </Typography>
+              <Stack
+                direction="row"
+                spacing={1}
+                sx={{ mt: 1, flexWrap: "wrap" }}
+              >
+                {NODE_IDS.map((nodeId) => (
+                  <Button
                     key={nodeId}
-                    sx={{
-                      p: 1.5,
-                      borderRadius: 2,
-                      bgcolor: "rgba(255,255,255,0.06)",
-                      border: "1px solid rgba(255,255,255,0.10)",
-                    }}
+                    variant={
+                      selectedNodeId === nodeId ? "contained" : "outlined"
+                    }
+                    onClick={() => setSelectedNodeId(nodeId)}
                   >
-                    <Typography variant="subtitle2" sx={{ mb: 1, opacity: 0.9, fontWeight: 700 }}>
-                      {nodeId.toUpperCase()}
-                    </Typography>
-                    <Stack spacing={0.5}>
-                      <Typography variant="body2">
-                        <span style={{ opacity: 0.6 }}>Edge latency: </span>
-                        {fmt(s?.edge_latency_ms, "ms")}
-                      </Typography>
-                      <Typography variant="body2">
-                        <span style={{ opacity: 0.6 }}>Central latency: </span>
-                        {fmt(s?.central_latency_ms, "ms")}
-                      </Typography>
-                      <Typography variant="body2">
-                        <span style={{ opacity: 0.6 }}>Latency delta: </span>
-                        {fmt(s?.latency_delta_ms, "ms")}
-                      </Typography>
-                      <Typography variant="body2">
-                        <span style={{ opacity: 0.6 }}>Bytes (edge): </span>
-                        {s?.bytes_edge != null ? `${s.bytes_edge} B` : "Waiting for anomaly..."}
-                      </Typography>
-                      <Typography variant="body2">
-                        <span style={{ opacity: 0.6 }}>Bytes (central): </span>
-                        {s?.bytes_central != null ? `${s.bytes_central} B` : "Waiting for anomaly..."}
-                      </Typography>
-                      <Typography variant="body2">
-                        <span style={{ opacity: 0.6 }}>BW ratio: </span>
-                        {bwRatio}
-                      </Typography>
-                    </Stack>
-                  </Box>
-                );
-              })}
+                    {nodeId}
+                  </Button>
+                ))}
+              </Stack>
+            </Box>
+
+            <Box sx={{ mt: 2 }}>
+              <Typography variant="body2" sx={{ opacity: 0.9 }}>
+                Selected node: <strong>{selectedNodeId}</strong>
+              </Typography>
+            </Box>
+
+            <Box sx={{ mt: 3 }}>
+              <Typography variant="caption" sx={{ opacity: 0.7 }}>
+                Airflow obstruction (0 = none, 1 = fully blocked)
+              </Typography>
+              <Slider
+                value={selectedObstructionValue}
+                min={0}
+                max={1}
+                step={0.05}
+                onChange={(_, v) => {
+                  setDraggingObstructionNodeId(selectedNodeId);
+                  draggingObstructionNodeIdRef.current = selectedNodeId;
+                  setObstructionDraftByNode((prev) => ({
+                    ...prev,
+                    [selectedNodeId]: v as number,
+                  }));
+                }}
+                onChangeCommitted={(_, v) =>
+                  applyObstruction(selectedNodeId, v as number)
+                }
+                sx={{ mt: 1 }}
+              />
+              <Typography variant="body2" sx={{ mt: 0.5, opacity: 0.8 }}>
+                {selectedObstructionValue.toFixed(2)} on {selectedNodeId}
+              </Typography>
+              <Stack direction="row" spacing={1} sx={{ mt: 1 }}>
+                <Button variant="contained" onClick={doFanFailure}>
+                  Fan failure
+                </Button>
+                <Button variant="outlined" onClick={doResetAirflow}>
+                  Reset airflow
+                </Button>
+              </Stack>
+            </Box>
+
+            <Box sx={{ mt: 3 }}>
+              <Typography variant="caption" sx={{ opacity: 0.7 }}>
+                Humidity (%)
+              </Typography>
+              <Slider
+                value={selectedHumidityValue}
+                min={0}
+                max={100}
+                step={1}
+                onChange={(_, v) => {
+                  setDraggingHumidityNodeId(selectedNodeId);
+                  draggingHumidityNodeIdRef.current = selectedNodeId;
+                  setHumidityDraftByNode((prev) => ({
+                    ...prev,
+                    [selectedNodeId]: v as number,
+                  }));
+                }}
+                onChangeCommitted={(_, v) =>
+                  applyHumidity(selectedNodeId, v as number)
+                }
+                sx={{ mt: 1 }}
+              />
+              <Typography variant="body2" sx={{ mt: 0.5, opacity: 0.8 }}>
+                {selectedHumidityValue.toFixed(1)}% on {selectedNodeId}
+              </Typography>
+              {controlsError && (
+                <Typography variant="body2" sx={{ mt: 1, opacity: 0.85 }}>
+                  {controlsError}
+                </Typography>
+              )}
+            </Box>
+
+            <Box
+              sx={{ mt: 3, display: "flex", flexDirection: "column", gap: 1 }}
+            >
+              <Typography variant="caption" sx={{ opacity: 0.7 }}>
+                Anomalies
+              </Typography>
+              <Button
+                variant="contained"
+                color="warning"
+                onClick={doThermalSpike}
+              >
+                Inject Thermal Spike
+              </Button>
+              <Button
+                variant="contained"
+                sx={{ bgcolor: "#3b82f6" }}
+                onClick={doInjectCoolantLeak}
+              >
+                Inject Coolant Leak
+              </Button>
+            </Box>
+
+            <Box sx={{ mt: 3 }}>
+              <Typography variant="caption" sx={{ opacity: 0.7 }}>
+                ML status
+              </Typography>
+              <Typography variant="body2" sx={{ mt: 0.5 }}>
+                {!mlStatus
+                  ? "Loading..."
+                  : mlStatus.model_loaded
+                    ? `Model loaded · window ${mlStatus.points_in_window}/${mlStatus.window_size}${
+                        mlStatus.window_ready ? " · ready" : " · warming up"
+                      }`
+                    : "Model not loaded"}
+              </Typography>
+              {mlStatus?.model_load_error && (
+                <Typography variant="body2" sx={{ mt: 1, opacity: 0.85 }}>
+                  {mlStatus.model_load_error}
+                </Typography>
+              )}
+              {mlError && (
+                <Typography variant="body2" sx={{ mt: 1, opacity: 0.85 }}>
+                  {mlError}
+                </Typography>
+              )}
+              <Button variant="outlined" onClick={doReloadMl} sx={{ mt: 1 }}>
+                Reload ML model
+              </Button>
             </Box>
           </Paper>
 
-          <NodeGrid
-            telemetryByNode={telemetryByNode}
-            apiError={apiError}
-            historyByNode={historyByNode}
-            selectedNodeId={selectedNodeId}
-            onSelectNode={setSelectedNodeId}
-          />
+          <Box sx={{ display: "grid", gap: 2 }}>
+            {selectedTelemetry && (
+              <NodeGauges
+                temperature={selectedTelemetry.temperature}
+                cpuLoad={selectedTelemetry.cpu_load}
+                humidity={selectedTelemetry.humidity}
+                airflow={selectedTelemetry.airflow}
+                isAnomaly={selectedTelemetry.is_anomaly === true}
+                nodeId={selectedTelemetry.node_id}
+              />
+            )}
+
+            <AlertsFeed alerts={alerts} />
+
+            <Paper sx={panelStyle}>
+              <Typography variant="h6" sx={{ mb: 2 }}>
+                Central vs Edge Comparison
+              </Typography>
+              <Box
+                sx={{
+                  display: "grid",
+                  gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+                  gap: 2,
+                }}
+              >
+                {NODE_IDS.map((nodeId) => {
+                  const s = centralStatus[nodeId];
+                  const fmt = (v: number | null | undefined, unit: string) =>
+                    v == null
+                      ? "Waiting for anomaly..."
+                      : `${v.toFixed(2)} ${unit}`;
+                  const bwRatio =
+                    s?.bytes_edge != null &&
+                    s.bytes_edge > 0 &&
+                    s?.bytes_central != null
+                      ? ((s.bytes_central / s.bytes_edge) * 100).toFixed(1) +
+                        "%"
+                      : "Waiting for anomaly...";
+                  return (
+                    <Box
+                      key={nodeId}
+                      sx={{
+                        p: 1.5,
+                        borderRadius: 2,
+                        bgcolor: "rgba(255,255,255,0.06)",
+                        border: "1px solid rgba(255,255,255,0.10)",
+                      }}
+                    >
+                      <Typography
+                        variant="subtitle2"
+                        sx={{ mb: 1, opacity: 0.9, fontWeight: 700 }}
+                      >
+                        {nodeId.toUpperCase()}
+                      </Typography>
+                      <Stack spacing={0.5}>
+                        <Typography variant="body2">
+                          <span style={{ opacity: 0.6 }}>Edge latency: </span>
+                          {fmt(s?.edge_latency_ms, "ms")}
+                        </Typography>
+                        <Typography variant="body2">
+                          <span style={{ opacity: 0.6 }}>
+                            Central latency:{" "}
+                          </span>
+                          {fmt(s?.central_latency_ms, "ms")}
+                        </Typography>
+                        <Typography variant="body2">
+                          <span style={{ opacity: 0.6 }}>Latency delta: </span>
+                          {fmt(s?.latency_delta_ms, "ms")}
+                        </Typography>
+                        <Typography variant="body2">
+                          <span style={{ opacity: 0.6 }}>Bytes (edge): </span>
+                          {s?.bytes_edge != null
+                            ? `${s.bytes_edge} B`
+                            : "Waiting for anomaly..."}
+                        </Typography>
+                        <Typography variant="body2">
+                          <span style={{ opacity: 0.6 }}>
+                            Bytes (central):{" "}
+                          </span>
+                          {s?.bytes_central != null
+                            ? `${s.bytes_central} B`
+                            : "Waiting for anomaly..."}
+                        </Typography>
+                        <Typography variant="body2">
+                          <span style={{ opacity: 0.6 }}>BW ratio: </span>
+                          {bwRatio}
+                        </Typography>
+                      </Stack>
+                    </Box>
+                  );
+                })}
+              </Box>
+            </Paper>
+
+            <NodeGrid
+              telemetryByNode={telemetryByNode}
+              apiError={apiError}
+              historyByNode={historyByNode}
+              selectedNodeId={selectedNodeId}
+              onSelectNode={setSelectedNodeId}
+            />
+          </Box>
         </Box>
-      </Box>
       )}
 
       {activeTab === 1 && (
