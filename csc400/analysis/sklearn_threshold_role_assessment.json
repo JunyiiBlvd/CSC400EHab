@@ -1,0 +1,88 @@
+{
+  "native_sklearn_decision_properties": {
+    "model_type": "IsolationForest",
+    "contamination": 0.01,
+    "offset_": -0.6326735384070952,
+    "equivalent_score_cutoff_interpretation": "model.predict() flags anomaly when decision_function < 0",
+    "score_ranges": {
+      "normal": {
+        "min": -0.08636307840142654,
+        "max": 0.2977165130637786
+      },
+      "anomaly": {
+        "min": -0.08561555982986513,
+        "max": 0.06747310852532873
+      }
+    },
+    "normal_score_distribution": {
+      "p01": 0.12357309483754476,
+      "p05": 0.15474284106496528,
+      "median": 0.24252070588622587
+    },
+    "anomaly_score_distribution": {
+      "p95": 0.02352654011659599,
+      "p99": 0.03218865996043861,
+      "max": 0.06747310852532873
+    }
+  },
+  "metrics_comparison": [
+    {
+      "threshold_rule": "sklearn native",
+      "recall": 0.15473441108545036,
+      "false_positive_rate": 0.00021287675465954026,
+      "precision": 0.5903083700440529,
+      "F1": 0.24519670631290028
+    },
+    {
+      "threshold_rule": "0.027690941863431795",
+      "recall": 0.9849884526558892,
+      "false_positive_rate": 0.0005241803958820938,
+      "precision": 0.788354898336414,
+      "F1": 0.8757700205338809
+    },
+    {
+      "threshold_rule": "0.04",
+      "recall": 0.99364896073903,
+      "false_positive_rate": 0.0006878437072601274,
+      "precision": 0.7411714039621017,
+      "F1": 0.8490379871731625
+    },
+    {
+      "threshold_rule": "0.05",
+      "recall": 0.9965357967667436,
+      "false_positive_rate": 0.000834339538423682,
+      "precision": 0.7030549898167006,
+      "F1": 0.8244566515404823
+    },
+    {
+      "threshold_rule": "0.15",
+      "recall": 1.0,
+      "false_positive_rate": 0.04120881950683552,
+      "precision": 0.0458953839631141,
+      "F1": 0.08776285786673424
+    }
+  ],
+  "distribution_placement": {
+    "offset_relative_to_normal_distribution": "offset_cutoff=0.0, normal_min=-0.08636307840142654, normal_p01=0.12357309483754476, normal_p05=0.15474284106496528",
+    "offset_relative_to_anomaly_distribution": "offset_cutoff=0.0, anomaly_min=-0.08561555982986513, anomaly_p95=0.02352654011659599, anomaly_max=0.06747310852532873",
+    "offset_cluster_placement": "below anomaly max"
+  },
+  "role_assessment": {
+    "primary_detector": {
+      "plausible": false,
+      "evidence": "recall=0.15473441108545036 and F1=0.24519670631290028 versus 0.027690941863431795 recall=0.9849884526558892 and F1=0.8757700205338809"
+    },
+    "secondary_confirmation_gate": {
+      "plausible": true,
+      "evidence": "precision=0.5903083700440529 with false_positive_rate=0.00021287675465954026 and recall=0.15473441108545036"
+    },
+    "precision_oriented_alarm": {
+      "plausible": true,
+      "evidence": "false_positive_rate=0.00021287675465954026 is the lowest among tested rules while recall=0.15473441108545036"
+    },
+    "baseline_reference_only": {
+      "plausible": true,
+      "evidence": "F1=0.24519670631290028 trails 0.027690941863431795 F1=0.8757700205338809, 0.04 F1=0.8490379871731625, and 0.05 F1=0.8244566515404823"
+    }
+  }
+}
