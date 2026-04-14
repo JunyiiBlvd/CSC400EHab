@@ -10,6 +10,8 @@ import {
   Chip,
   Tabs,
   Tab,
+  TextField,
+  MenuItem,
   Table,
   TableBody,
   TableCell,
@@ -29,9 +31,12 @@ import type {
   MlStatus,
   Telemetry,
   TelemetryByNode,
+  UserProfile,
 } from "./lib/types";
 import {
+  createProfile,
   fetchMlStatus,
+  fetchProfiles,
   reloadMlModel,
   resetAirflow,
   setAirflowObstruction,
@@ -69,7 +74,7 @@ type SummaryRow = {
   max_delta_ms: number | null;
 };
 
-function HistoryTab() {
+function HistoryTab({ profileId }: { profileId: number | null }) {
   const [events, setEvents] = useState<AnomalyEvent[]>([]);
   const [summary, setSummary] = useState<SummaryRow | null>(null);
   const [loading, setLoading] = useState(false);
@@ -79,9 +84,20 @@ function HistoryTab() {
     setLoading(true);
     setFetchError(null);
     try {
+      if (profileId == null) {
+        setEvents([]);
+        setSummary(null);
+        setLoading(false);
+        return;
+      }
+
       const [evRes, sumRes] = await Promise.all([
-        fetch("http://localhost:8000/db/history/events"),
-        fetch("http://localhost:8000/db/anomaly_summary"),
+        fetch(
+          `http://localhost:8000/db/history/events?profile_id=${profileId}`,
+        ),
+        fetch(
+          `http://localhost:8000/db/anomaly_summary?profile_id=${profileId}`,
+        ),
       ]);
       const evData = await evRes.json();
       const sumData = await sumRes.json();
@@ -103,9 +119,10 @@ function HistoryTab() {
   }
 
   useEffect(() => {
+    if (profileId == null) return;
     fetchEvents();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [profileId]);
 
   function fmtTs(ts: number | null): string {
     if (ts == null) return "—";
@@ -250,6 +267,10 @@ function HistoryTab() {
 
 export default function Home() {
   const [activeTab, setActiveTab] = useState(0);
+  const [profiles, setProfiles] = useState<UserProfile[]>([]);
+  const [activeProfileId, setActiveProfileId] = useState<number | null>(null);
+  const [profileDraft, setProfileDraft] = useState("");
+  const [profileError, setProfileError] = useState<string | null>(null);
   const [telemetryByNode, setTelemetryByNode] = useState<TelemetryByNode>({});
   const [apiError, setApiError] = useState<string | null>(null);
   const [selectedNodeId, setSelectedNodeId] = useState<string>("node-1");
@@ -276,6 +297,51 @@ export default function Home() {
   const prevAnomalyRef = useRef<Record<string, boolean>>({});
 
   const selectedTelemetry = telemetryByNode[selectedNodeId] ?? null;
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadProfiles() {
+      try {
+        const loaded = await fetchProfiles();
+        if (cancelled) return;
+
+        setProfiles(loaded);
+
+        const savedProfileId = window.localStorage.getItem(
+          "ehabitat-active-profile-id",
+        );
+        const parsedId = savedProfileId ? Number(savedProfileId) : NaN;
+
+        const fallbackProfile = loaded[0] ?? null;
+        const matchingProfile =
+          loaded.find((profile) => profile.id === parsedId) ?? fallbackProfile;
+
+        setActiveProfileId(matchingProfile ? matchingProfile.id : null);
+        setProfileError(null);
+      } catch (e: unknown) {
+        if (!cancelled) {
+          setProfileError(
+            e instanceof Error ? e.message : "Failed to load profiles",
+          );
+        }
+      }
+    }
+
+    loadProfiles();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (activeProfileId == null) return;
+    window.localStorage.setItem(
+      "ehabitat-active-profile-id",
+      String(activeProfileId),
+    );
+  }, [activeProfileId]);
 
   function getAnomalyReason(telemetry: Telemetry) {
     const reasons: string[] = [];
@@ -323,7 +389,10 @@ export default function Home() {
     let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 
     function connect() {
-      socket = new WebSocket("ws://localhost:8000/ws/simulation");
+      if (activeProfileId == null) return;
+      socket = new WebSocket(
+        `ws://localhost:8000/ws/simulation?profile_id=${activeProfileId}`,
+      );
 
       socket.onopen = () => {
         if (!cancelled) setApiError(null);
@@ -410,7 +479,7 @@ export default function Home() {
       if (reconnectTimer) clearTimeout(reconnectTimer);
       socket?.close();
     };
-  }, []);
+  }, [activeProfileId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -546,6 +615,30 @@ export default function Home() {
     return `${count} nodes streaming`;
   }, [telemetryByNode, apiError]);
 
+  async function handleCreateProfile() {
+    const trimmed = profileDraft.trim();
+
+    if (!trimmed) {
+      setProfileError("Enter a profile name first");
+      return;
+    }
+
+    try {
+      setProfileError(null);
+      const profile = await createProfile(trimmed);
+
+      setProfiles((prev) =>
+        [...prev, profile].sort((a, b) => a.name.localeCompare(b.name)),
+      );
+      setActiveProfileId(profile.id);
+      setProfileDraft("");
+    } catch (e: unknown) {
+      setProfileError(
+        e instanceof Error ? e.message : "Failed to create profile",
+      );
+    }
+  }
+
   async function applyObstruction(nodeId: string, ratio: number) {
     try {
       setControlsError(null);
@@ -671,6 +764,9 @@ export default function Home() {
     }
   }
 
+  const activeProfile =
+    profiles.find((profile) => profile.id === activeProfileId) ?? null;
+
   const anomalyChip =
     selectedTelemetry?.is_anomaly === true ? (
       <Chip label="ANOMALY" color="error" size="small" />
@@ -690,6 +786,18 @@ export default function Home() {
         <Typography variant="body2" sx={{ opacity: 0.75 }}>
           {summaryText}
         </Typography>
+        <Chip
+          label={
+            activeProfile
+              ? `Profile: ${activeProfile.name}`
+              : "No profile selected"
+          }
+          variant="outlined"
+          size="small"
+          sx={{
+            color: "#fff",
+          }}
+        />
       </Box>
 
       <Tabs
@@ -729,6 +837,67 @@ export default function Home() {
                     ? "Connected"
                     : "Connecting..."}
               </Typography>
+            </Box>
+
+            <Box sx={{ mt: 3 }}>
+              <Typography variant="caption" sx={{ opacity: 0.7 }}>
+                Active profile
+              </Typography>
+
+              <TextField
+                select
+                fullWidth
+                size="small"
+                value={activeProfileId ?? ""}
+                onChange={(event) => {
+                  const nextValue = Number(event.target.value);
+                  setActiveProfileId(
+                    Number.isNaN(nextValue) ? null : nextValue,
+                  );
+                }}
+                sx={{
+                  mt: 1,
+                  "& .MuiOutlinedInput-root": {
+                    color: "rgba(255,255,255,0.85)",
+                  },
+                  "& .MuiSvgIcon-root": {
+                    color: "rgba(255,255,255,0.85)",
+                  },
+                }}
+              >
+                {profiles.map((profile) => (
+                  <MenuItem key={profile.id} value={profile.id}>
+                    {profile.name}
+                  </MenuItem>
+                ))}
+              </TextField>
+
+              <Stack direction="row" spacing={1} sx={{ mt: 1.5 }}>
+                <TextField
+                  label="New profile"
+                  size="small"
+                  fullWidth
+                  value={profileDraft}
+                  onChange={(event) => setProfileDraft(event.target.value)}
+                  sx={{
+                    "& .MuiInputLabel-root": {
+                      color: "rgba(255,255,255,0.85)",
+                    },
+                    "& .MuiOutlinedInput-root": {
+                      color: "rgba(255,255,255,0.85)",
+                    },
+                  }}
+                />
+                <Button variant="contained" onClick={handleCreateProfile}>
+                  Add
+                </Button>
+              </Stack>
+
+              {profileError && (
+                <Typography variant="body2" color="error" sx={{ mt: 1 }}>
+                  {profileError}
+                </Typography>
+              )}
             </Box>
 
             <Box sx={{ mt: 3 }}>
@@ -985,7 +1154,7 @@ export default function Home() {
 
       {activeTab === 1 && (
         <Box sx={{ mt: 2 }}>
-          <HistoryTab />
+          <HistoryTab profileId={activeProfileId} />
         </Box>
       )}
     </Box>

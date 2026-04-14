@@ -14,7 +14,16 @@ from backend.simulation.airflow import AirflowModel
 from backend.simulation.humidity import HumidityModel
 from backend.simulation.central_server import CentralServer
 from backend.ml.model_loader import ModelLoader
-from backend.simulation.database import init_db, insert_telemetry, insert_anomaly_event, get_anomaly_events, get_telemetry_range, DB_PATH
+from backend.simulation.database import (
+    DB_PATH,
+    create_profile,
+    get_anomaly_events,
+    get_profiles,
+    get_telemetry_range,
+    init_db,
+    insert_anomaly_event,
+    insert_telemetry,
+)
 
 init_db()
 
@@ -68,6 +77,10 @@ class AirflowObstructionRequest(NodeTargetRequest):
 
 class HumiditySetRequest(NodeTargetRequest):
     humidity: float
+
+
+class ProfileCreateRequest(BaseModel):
+    name: str
 
 
 def reload_models() -> tuple[bool, str | None]:
@@ -125,6 +138,8 @@ def fan_failure(body: NodeTargetRequest):
 
     node = nodes[body.node_id]
     node.inject_hvac_failure(duration_seconds=40)
+    node.airflow_model.obstruction_ratio = 1.0
+    
     if central_server is not None:
         central_server.record_injection(body.node_id, time.time())
     return {"ok": True, "node_id": body.node_id, "obstruction_ratio": 1.0}
@@ -152,6 +167,23 @@ def set_humidity(body: HumiditySetRequest):
     return {"ok": True, "node_id": body.node_id, "humidity": humidity}
 
 
+@app.get("/api/profiles")
+def list_profiles():
+    return {"ok": True, "profiles": get_profiles()}
+
+
+@app.post("/api/profiles")
+def add_profile(body: ProfileCreateRequest):
+    try:
+        profile = create_profile(body.name)
+        return {"ok": True, "profile": profile}
+    except ValueError as e:
+        return JSONResponse(
+            status_code=400,
+            content={"ok": False, "error": str(e)},
+        )
+
+
 @app.get("/central/status")
 def central_status():
     if central_server is None:
@@ -160,7 +192,7 @@ def central_status():
 
 
 @app.get("/db/anomaly_summary")
-def get_anomaly_summary():
+def get_anomaly_summary(profile_id: Optional[int] = None):
     query = """
     SELECT
         detection_source,
@@ -172,28 +204,34 @@ def get_anomaly_summary():
         ROUND(MAX(central_latency_ms - edge_latency_ms), 1) as max_delta_ms
     FROM anomaly_events
     WHERE edge_latency_ms IS NOT NULL
-    AND central_latency_ms IS NOT NULL;
+    AND central_latency_ms IS NOT NULL
     """
+    params = []
+
+    if profile_id is not None:
+        query += " AND profile_id = ?"
+        params.append(profile_id)
+
+    query += ";"
+
     try:
         conn = sqlite3.connect(str(DB_PATH))
         conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
-        cursor.execute(query)
+        cursor.execute(query, params)
         row = cursor.fetchone()
         conn.close()
 
         if row and row["sample_count"] > 0:
-            # Convert Row to dict
             return {"ok": True, "summary": [dict(row)]}
-        else:
-            return {"ok": True, "summary": []}
+        return {"ok": True, "summary": []}
     except Exception as e:
         return {"ok": False, "error": str(e)}
 
 
 @app.get("/db/history/events")
-def history_events():
-    events = get_anomaly_events()
+def history_events(profile_id: Optional[int] = None):
+    events = get_anomaly_events(profile_id=profile_id)
     return {"ok": True, "events": events}
 
 
@@ -202,19 +240,27 @@ def history_telemetry(
     node_id: Optional[str] = None,
     start: Optional[float] = None,
     end: Optional[float] = None,
+    profile_id: Optional[int] = None,
 ):
     if node_id is None or start is None or end is None:
         return JSONResponse(
             status_code=400,
             content={"ok": False, "error": "node_id, start, and end are required"},
         )
-    rows = get_telemetry_range(node_id, start, end)
+    rows = get_telemetry_range(node_id, start, end, profile_id=profile_id)
     return {"ok": True, "rows": rows}
 
 
 @app.websocket("/ws/simulation")
 async def websocket_simulation(websocket: WebSocket):
     await websocket.accept()
+
+    profile_id_raw = websocket.query_params.get("profile_id")
+    try:
+        profile_id = int(profile_id_raw) if profile_id_raw is not None else None
+    except ValueError:
+        profile_id = None
+
     try:
         while True:
             frame = {}
@@ -240,7 +286,8 @@ async def websocket_simulation(websocket: WebSocket):
                     "airflow": telemetry.get("airflow"),
                     "cpu_load": telemetry.get("cpu_load"),
                     "is_anomaly": 1 if telemetry.get("is_anomaly") else 0,
-                    "anomaly_score": telemetry.get("anomaly_score")
+                    "anomaly_score": telemetry.get("anomaly_score"),
+                    "profile_id": profile_id,
                 })
 
                 # Detect edge False→True transition
@@ -265,7 +312,8 @@ async def websocket_simulation(websocket: WebSocket):
                         "central_latency_ms": None,
                         "detection_source": "edge",
                         "bytes_edge": len(json.dumps(telemetry).encode()),
-                        "bytes_central": c_status.get("bytes_central")
+                        "bytes_central": c_status.get("bytes_central"),
+                        "profile_id": profile_id,
                     })
                 _prev_edge_anomaly[node_id] = curr_anomaly
 

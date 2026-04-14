@@ -1,4 +1,4 @@
-import type { MlStatus } from "./types";
+import type { MlStatus, UserProfile } from "./types";
 
 const API_BASE = "http://localhost:8000";
 
@@ -6,6 +6,38 @@ type NodeControlResponse = {
   ok: true;
   node_id: string;
 };
+
+export async function fetchProfiles(): Promise<UserProfile[]> {
+  const res = await fetch(`${API_BASE}/api/profiles`, { cache: "no-store" });
+  if (!res.ok) throw new Error(`API error ${res.status}`);
+
+  const data = (await res.json()) as {
+    ok: boolean;
+    profiles: UserProfile[];
+  };
+
+  return data.profiles;
+}
+
+export async function createProfile(name: string): Promise<UserProfile> {
+  const res = await fetch(`${API_BASE}/api/profiles`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name }),
+  });
+
+  const data = (await res.json()) as {
+    ok: boolean;
+    error?: string;
+    profile?: UserProfile;
+  };
+
+  if (!res.ok || !data.ok || !data.profile) {
+    throw new Error(data.error ?? `API error ${res.status}`);
+  }
+
+  return data.profile;
+}
 
 export async function setAirflowObstruction(
   nodeId: string,
@@ -17,7 +49,9 @@ export async function setAirflowObstruction(
     body: JSON.stringify({ node_id: nodeId, ratio }),
   });
   if (!res.ok) throw new Error(`API error ${res.status}`);
-  return (await res.json()) as NodeControlResponse & { obstruction_ratio: number };
+  return (await res.json()) as NodeControlResponse & {
+    obstruction_ratio: number;
+  };
 }
 
 export async function simulateFanFailure(
@@ -29,7 +63,9 @@ export async function simulateFanFailure(
     body: JSON.stringify({ node_id: nodeId }),
   });
   if (!res.ok) throw new Error(`API error ${res.status}`);
-  return (await res.json()) as NodeControlResponse & { obstruction_ratio: number };
+  return (await res.json()) as NodeControlResponse & {
+    obstruction_ratio: number;
+  };
 }
 
 export async function resetAirflow(
@@ -41,7 +77,9 @@ export async function resetAirflow(
     body: JSON.stringify({ node_id: nodeId }),
   });
   if (!res.ok) throw new Error(`API error ${res.status}`);
-  return (await res.json()) as NodeControlResponse & { obstruction_ratio: number };
+  return (await res.json()) as NodeControlResponse & {
+    obstruction_ratio: number;
+  };
 }
 
 export async function setHumidity(
@@ -70,7 +108,11 @@ export async function reloadMlModel(): Promise<{
 }> {
   const res = await fetch(`${API_BASE}/api/ml/reload`, { method: "POST" });
   if (!res.ok) throw new Error(`API error ${res.status}`);
-  return (await res.json()) as { ok: boolean; model_loaded: boolean; error?: string | null };
+  return (await res.json()) as {
+    ok: boolean;
+    model_loaded: boolean;
+    error?: string | null;
+  };
 }
 
 export async function injectThermalSpike(
@@ -87,5 +129,9 @@ export async function injectThermalSpike(
 
   if (!res.ok) throw new Error(`API error ${res.status}`);
 
-  return (await res.json()) as { status: string; node: string; scenario: string };
+  return (await res.json()) as {
+    status: string;
+    node: string;
+    scenario: string;
+  };
 }
