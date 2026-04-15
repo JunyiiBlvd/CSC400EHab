@@ -275,7 +275,7 @@ export default function Home() {
   const [apiError, setApiError] = useState<string | null>(null);
   const [selectedNodeId, setSelectedNodeId] = useState<string>("node-1");
   const [historyByNode, setHistoryByNode] = useState<HistoryByNode>({});
-  const [alerts, setAlerts] = useState<AlertItem[]>([]);
+  const [alertsByProfile, setAlertsByProfile] = useState<Record<number, AlertItem[]>>({});
   const [controlsError, setControlsError] = useState<string | null>(null);
   const [mlStatus, setMlStatus] = useState<MlStatus | null>(null);
   const [mlError, setMlError] = useState<string | null>(null);
@@ -295,8 +295,26 @@ export default function Home() {
   const draggingObstructionNodeIdRef = useRef<string | null>(null);
   const draggingHumidityNodeIdRef = useRef<string | null>(null);
   const prevAnomalyRef = useRef<Record<string, boolean>>({});
+  const activeProfileIdRef = useRef<number | null>(null);
 
   const selectedTelemetry = telemetryByNode[selectedNodeId] ?? null;
+  const alerts =
+    activeProfileId != null ? (alertsByProfile[activeProfileId] ?? []) : [];
+
+  // Keep ref in sync with state and reset per-node anomaly tracking on switch
+  useEffect(() => {
+    activeProfileIdRef.current = activeProfileId;
+    prevAnomalyRef.current = {};
+  }, [activeProfileId]);
+
+  function addAlerts(newAlerts: AlertItem[]) {
+    const pid = activeProfileIdRef.current;
+    if (pid == null) return;
+    setAlertsByProfile((prev) => {
+      const existing = prev[pid] ?? [];
+      return { ...prev, [pid]: [...newAlerts, ...existing].slice(0, 10) };
+    });
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -501,7 +519,7 @@ export default function Home() {
               message: `ML window ready (${s.points_in_window}/${s.window_size}). Anomaly scoring active.`,
             };
 
-            setAlerts((prev) => [alert, ...prev].slice(0, 10));
+            addAlerts([alert]);
           }
           if (!s.window_ready) prevMlReady.current = false;
         }
@@ -565,7 +583,7 @@ export default function Home() {
     }
 
     if (newAlerts.length > 0) {
-      setAlerts((prev) => [...newAlerts, ...prev].slice(0, 10));
+      addAlerts(newAlerts);
     }
   }, [telemetryByNode]);
 
@@ -728,7 +746,7 @@ export default function Home() {
         message: `Thermal spike injected on ${selectedNodeId}`,
       };
 
-      setAlerts((prev) => [alertThermal, ...prev].slice(0, 10));
+      addAlerts([alertThermal]);
     } catch (e: unknown) {
       setControlsError(
         e instanceof Error ? e.message : "Failed to inject thermal spike",
@@ -756,7 +774,7 @@ export default function Home() {
         message: `Coolant leak injected on ${selectedNodeId}`,
       };
 
-      setAlerts((prev) => [alertCoolant, ...prev].slice(0, 10));
+      addAlerts([alertCoolant]);
     } catch (e: unknown) {
       setControlsError(
         e instanceof Error ? e.message : "Failed to inject coolant leak",

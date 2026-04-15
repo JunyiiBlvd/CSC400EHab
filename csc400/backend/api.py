@@ -138,8 +138,7 @@ def fan_failure(body: NodeTargetRequest):
 
     node = nodes[body.node_id]
     node.inject_hvac_failure(duration_seconds=40)
-    node.airflow_model.obstruction_ratio = 1.0
-    
+
     if central_server is not None:
         central_server.record_injection(body.node_id, time.time())
     return {"ok": True, "node_id": body.node_id, "obstruction_ratio": 1.0}
@@ -151,6 +150,7 @@ def reset_airflow(body: NodeTargetRequest):
         return {"ok": False, "error": f"Unknown node: {body.node_id}"}
 
     node = nodes[body.node_id]
+    node.hvac_failure_remaining_steps = 0
     node.airflow_model.reset()
     return {"ok": True, "node_id": body.node_id, "obstruction_ratio": 0.0}
 
@@ -290,31 +290,11 @@ async def websocket_simulation(websocket: WebSocket):
                     "profile_id": profile_id,
                 })
 
-                # Detect edge False→True transition
+                # Detect edge False→True transition — edge_ts passed to central server
                 curr_anomaly: bool = telemetry.get("is_anomaly", False)
                 edge_ts = None
                 if curr_anomaly and not _prev_edge_anomaly[node_id]:
                     edge_ts = time.time()
-
-                    # DB Insert: Edge Anomaly Event
-                    c_status = central_server.get_status().get(node_id, {}) if central_server else {}
-                    injection_ts = None
-                    if central_server and node_id in getattr(central_server, "_records", {}):
-                        injection_ts = central_server._records[node_id].get("injection_ts")
-
-                    insert_anomaly_event({
-                        "seq_id": _step_seq[node_id],
-                        "node_id": node_id,
-                        "injection_timestamp": injection_ts,
-                        "edge_detection_ts": edge_ts,
-                        "central_detection_ts": None,
-                        "edge_latency_ms": c_status.get("edge_latency_ms"),
-                        "central_latency_ms": None,
-                        "detection_source": "edge",
-                        "bytes_edge": len(json.dumps(telemetry).encode()),
-                        "bytes_central": c_status.get("bytes_central"),
-                        "profile_id": profile_id,
-                    })
                 _prev_edge_anomaly[node_id] = curr_anomaly
 
                 # Feed central server with raw telemetry (no anomaly fields)
@@ -343,7 +323,8 @@ async def websocket_simulation(websocket: WebSocket):
                             "central_latency_ms": c_status.get("central_latency_ms"),
                             "detection_source": "central",
                             "bytes_edge": c_status.get("bytes_edge"),
-                            "bytes_central": c_status.get("bytes_central")
+                            "bytes_central": c_status.get("bytes_central"),
+                            "profile_id": profile_id,
                         })
                         _prev_central_detection[node_id] = True
                     elif not c_det_ts:
