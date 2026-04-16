@@ -3,7 +3,15 @@
 import { Paper, Typography, Box, Chip } from "@mui/material";
 import type { AlertItem } from "../lib/types";
 
-export default function AlertsFeed({ alerts }: { alerts: AlertItem[] }) {
+export default function AlertsFeed({
+  alerts,
+  maxHeight,
+  fillHeight = false,
+}: {
+  alerts: AlertItem[];
+  maxHeight?: number | string;
+  fillHeight?: boolean;
+}) {
   return (
     <Paper
       sx={{
@@ -12,6 +20,10 @@ export default function AlertsFeed({ alerts }: { alerts: AlertItem[] }) {
         bgcolor: "rgba(255,255,255,0.04)",
         border: "1px solid rgba(255,255,255,0.12)",
         color: "white",
+        display: "flex",
+        flexDirection: "column",
+        minHeight: 0,
+        height: fillHeight ? "100%" : "auto",
       }}
     >
       <Typography variant="h6" sx={{ mb: 2 }}>
@@ -24,7 +36,17 @@ export default function AlertsFeed({ alerts }: { alerts: AlertItem[] }) {
         </Typography>
       )}
 
-      <Box sx={{ display: "grid", gap: 1 }}>
+      <Box
+        sx={{
+          display: "grid",
+          gap: 1,
+          flex: fillHeight ? 1 : "0 1 auto",
+          minHeight: 0,
+          maxHeight: fillHeight ? "none" : maxHeight,
+          overflowY: fillHeight || maxHeight ? "auto" : "visible",
+          pr: fillHeight || maxHeight ? 0.5 : 0,
+        }}
+      >
         {alerts.map((alert) => (
           <Box
             key={alert.id}

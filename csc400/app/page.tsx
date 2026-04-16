@@ -24,6 +24,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import NodeGrid from "./components/NodeGrid";
 import NodeGauges from "./components/NodeGauges";
 import AlertsFeed from "./components/AlertsFeed";
+import TopologyOverview from "./components/TopologyOverview";
 
 import type {
   AlertItem,
@@ -47,6 +48,197 @@ import {
 
 const NODE_IDS = ["node-1", "node-2", "node-3"] as const;
 const MAX_POINTS = 300;
+
+type InfoSlide = {
+  title: string;
+  body: string;
+  emphasis: string;
+  label?: string;
+  diagram: string;
+};
+
+const INFO_SLIDES: readonly InfoSlide[] = [
+  {
+    title: "Virtual Server Room Simulation",
+    body:
+      "E-Habitat simulates a three-node server room environment with live thermal, humidity, airflow, and CPU telemetry. It runs two anomaly detection architectures simultaneously to compare their real-world tradeoffs.",
+    emphasis: "Two architectures. One dataset. Live comparison.",
+    diagram: `<svg width="100%" viewBox="0 0 280 132">
+  <circle cx="50" cy="38" r="16" fill="rgba(255,255,255,0.02)" stroke="#22d3ee" stroke-width="1.5"/><text x="50" y="41" text-anchor="middle" font-size="8" fill="#22d3ee" font-family="sans-serif" font-weight="500">N-1</text>
+  <circle cx="140" cy="38" r="16" fill="rgba(255,255,255,0.02)" stroke="#22d3ee" stroke-width="1.5"/><text x="140" y="41" text-anchor="middle" font-size="8" fill="#22d3ee" font-family="sans-serif" font-weight="500">N-2</text>
+  <circle cx="230" cy="38" r="16" fill="rgba(255,255,255,0.02)" stroke="#22d3ee" stroke-width="1.5"/><text x="230" y="41" text-anchor="middle" font-size="8" fill="#22d3ee" font-family="sans-serif" font-weight="500">N-3</text>
+  <line x1="57" y1="52" x2="121" y2="74" stroke="#64748b" stroke-width=".9"/><line x1="140" y1="54" x2="140" y2="70" stroke="#64748b" stroke-width=".9"/><line x1="223" y1="52" x2="159" y2="74" stroke="#64748b" stroke-width=".9"/>
+  <rect x="107" y="70" width="66" height="26" rx="5" fill="rgba(255,255,255,0.02)" stroke="#fbbf24" stroke-width="1.5"/>
+  <text x="140" y="86" text-anchor="middle" font-size="8" fill="#fbbf24" font-family="sans-serif" font-weight="500">CENTRAL SERVER</text>
+  <text x="140" y="114" text-anchor="middle" font-size="11.5" fill="#cbd5e1" font-family="sans-serif" font-weight="600">
+    <tspan x="140" dy="0">3 sensor nodes · 1 server</tspan>
+    <tspan x="140" dy="12">dual-path inference</tspan>
+  </text>
+</svg>`,
+  },
+  {
+    title: "Three Independent Sensor Nodes",
+    body:
+      "NODE-1, NODE-2, and NODE-3 each run a full physics simulation — heat transfer, fan airflow, and humidity drift. Each node operates independently and streams data once per second.",
+    label: "Edge",
+    emphasis: "1 Hz telemetry per node",
+    diagram: `<svg width="100%" viewBox="0 0 280 132">
+  <g>
+    <circle cx="50" cy="68" r="16" fill="rgba(255,255,255,0.02)" stroke="#22d3ee" stroke-width="1.5"/><text x="50" y="71" text-anchor="middle" font-size="8" fill="#22d3ee" font-family="sans-serif" font-weight="500">NODE</text>
+    <path d="M28,40 A24 24 0 0 1 72,40" fill="none" stroke="#22d3ee" stroke-width=".9" opacity=".45"/>
+    <path d="M36,48 A16 16 0 0 1 64,48" fill="none" stroke="#22d3ee" stroke-width="1" opacity=".65"/>
+    <path d="M43,56 A8 8 0 0 1 57,56" fill="none" stroke="#22d3ee" stroke-width="1.2" opacity=".9"/>
+  </g>
+  <g>
+    <circle cx="140" cy="68" r="16" fill="rgba(255,255,255,0.02)" stroke="#22d3ee" stroke-width="1.5"/><text x="140" y="71" text-anchor="middle" font-size="8" fill="#22d3ee" font-family="sans-serif" font-weight="500">NODE</text>
+    <path d="M118,40 A24 24 0 0 1 162,40" fill="none" stroke="#22d3ee" stroke-width=".9" opacity=".45"/>
+    <path d="M126,48 A16 16 0 0 1 154,48" fill="none" stroke="#22d3ee" stroke-width="1" opacity=".65"/>
+    <path d="M133,56 A8 8 0 0 1 147,56" fill="none" stroke="#22d3ee" stroke-width="1.2" opacity=".9"/>
+  </g>
+  <g>
+    <circle cx="230" cy="68" r="16" fill="rgba(255,255,255,0.02)" stroke="#22d3ee" stroke-width="1.5"/><text x="230" y="71" text-anchor="middle" font-size="8" fill="#22d3ee" font-family="sans-serif" font-weight="500">NODE</text>
+    <path d="M208,40 A24 24 0 0 1 252,40" fill="none" stroke="#22d3ee" stroke-width=".9" opacity=".45"/>
+    <path d="M216,48 A16 16 0 0 1 244,48" fill="none" stroke="#22d3ee" stroke-width="1" opacity=".65"/>
+    <path d="M223,56 A8 8 0 0 1 237,56" fill="none" stroke="#22d3ee" stroke-width="1.2" opacity=".9"/>
+  </g>
+  <text x="140" y="114" text-anchor="middle" font-size="11.5" fill="#cbd5e1" font-family="sans-serif" font-weight="600">
+    <tspan x="140" dy="0">each node runs full physics</tspan>
+    <tspan x="140" dy="12">no inter-node communication</tspan>
+  </text>
+</svg>`,
+  },
+  {
+    title: "ML Runs at the Node",
+    body:
+      "Each node runs an Isolation Forest model locally before telemetry leaves. Anomaly scores are computed at the source — no round trip required.",
+    label: "Edge",
+    emphasis: "Score < 0.15 → anomaly flagged",
+    diagram: `<svg width="100%" viewBox="0 0 280 132">
+  <circle cx="56" cy="50" r="28" fill="rgba(255,255,255,0.02)" stroke="#22d3ee" stroke-width="1.5"/>
+  <text x="56" y="46" text-anchor="middle" font-size="9" fill="#22d3ee" font-family="sans-serif" font-weight="600">IF</text>
+  <text x="56" y="58" text-anchor="middle" font-size="7" fill="#94a3b8" font-family="sans-serif">model</text>
+  <line x1="84" y1="50" x2="130" y2="50" stroke="#64748b" stroke-width=".9"/>
+  <text x="107" y="44" text-anchor="middle" font-size="7" fill="#64748b" font-family="sans-serif">score</text>
+  <rect x="132" y="36" width="74" height="28" rx="5" fill="rgba(255,255,255,0.02)" stroke="#94a3b8" stroke-width=".8"/>
+  <text x="169" y="51" text-anchor="middle" font-size="9" fill="#94a3b8" font-family="sans-serif">score: 0.11</text>
+  <text x="169" y="61" text-anchor="middle" font-size="7" fill="#f87171" font-family="sans-serif">↓ anomalous</text>
+  <line x1="206" y1="50" x2="238" y2="50" stroke="#f87171" stroke-width="1"/>
+  <rect x="240" y="38" width="32" height="24" rx="5" fill="rgba(255,255,255,0.02)" stroke="#f87171" stroke-width="1.2"/>
+  <text x="256" y="49" text-anchor="middle" font-size="7" fill="#f87171" font-family="sans-serif" font-weight="600">CRIT</text>
+  <text x="256" y="59" text-anchor="middle" font-size="7" fill="#f87171" font-family="sans-serif">alert</text>
+  <text x="140" y="114" text-anchor="middle" font-size="11.5" fill="#cbd5e1" font-family="sans-serif" font-weight="600">
+    <tspan x="140" dy="0">inference runs locally</tspan>
+    <tspan x="140" dy="12">score &lt; 0.15 flags anomaly</tspan>
+  </text>
+</svg>`,
+  },
+  {
+    title: "Server Collects, Then Decides",
+    body:
+      "The central server receives raw telemetry from all three nodes and runs its own inference pass. Detection happens after the data travels — introducing measurable latency.",
+    label: "Central",
+    emphasis: "~258ms average detection lag",
+    diagram: `<svg width="100%" viewBox="0 0 280 132">
+  <circle cx="28" cy="22" r="11" fill="rgba(255,255,255,0.02)" stroke="#22d3ee" stroke-width="1.2"/><text x="28" y="25" text-anchor="middle" font-size="7" fill="#22d3ee" font-family="sans-serif">N1</text>
+  <circle cx="28" cy="50" r="11" fill="rgba(255,255,255,0.02)" stroke="#22d3ee" stroke-width="1.2"/><text x="28" y="53" text-anchor="middle" font-size="7" fill="#22d3ee" font-family="sans-serif">N2</text>
+  <circle cx="28" cy="78" r="11" fill="rgba(255,255,255,0.02)" stroke="#22d3ee" stroke-width="1.2"/><text x="28" y="81" text-anchor="middle" font-size="7" fill="#22d3ee" font-family="sans-serif">N3</text>
+  <line x1="39" y1="22" x2="100" y2="48" stroke="#64748b" stroke-width=".7" stroke-dasharray="3 2"/>
+  <line x1="39" y1="50" x2="100" y2="50" stroke="#64748b" stroke-width=".7" stroke-dasharray="3 2"/>
+  <line x1="39" y1="78" x2="100" y2="52" stroke="#64748b" stroke-width=".7" stroke-dasharray="3 2"/>
+  <text x="72" y="36" text-anchor="middle" font-size="7" fill="#64748b" font-family="sans-serif">raw</text>
+  <circle cx="120" cy="50" r="20" fill="rgba(255,255,255,0.02)" stroke="#fbbf24" stroke-width="1.5"/>
+  <text x="120" y="47" text-anchor="middle" font-size="7" fill="#fbbf24" font-family="sans-serif" font-weight="600">CENTRAL</text>
+  <text x="120" y="57" text-anchor="middle" font-size="7" fill="#fbbf24" font-family="sans-serif">SERVER</text>
+  <line x1="140" y1="50" x2="172" y2="50" stroke="#fbbf24" stroke-width="1"/>
+  <rect x="174" y="36" width="60" height="28" rx="5" fill="rgba(255,255,255,0.02)" stroke="#fbbf24" stroke-width="1"/>
+  <text x="204" y="48" text-anchor="middle" font-size="7" fill="#fbbf24" font-family="sans-serif">run</text>
+  <text x="204" y="58" text-anchor="middle" font-size="7" fill="#fbbf24" font-family="sans-serif">inference</text>
+  <line x1="234" y1="50" x2="256" y2="50" stroke="#f87171" stroke-width="1"/>
+  <circle cx="264" cy="50" r="10" fill="rgba(255,255,255,0.02)" stroke="#f87171" stroke-width="1"/>
+  <text x="264" y="53" text-anchor="middle" font-size="8" fill="#f87171" font-family="sans-serif">!</text>
+  <text x="140" y="114" text-anchor="middle" font-size="11.5" fill="#cbd5e1" font-family="sans-serif" font-weight="600">
+    <tspan x="140" dy="0">data travels first · server decides after</tspan>
+    <tspan x="140" dy="12">latency cost</tspan>
+  </text>
+</svg>`,
+  },
+  {
+    title: "Alerts on State Transitions",
+    body:
+      "Alerts fire only on a normal → anomalous transition, not on every anomalous frame. This prevents alert flooding during sustained failures and reflects real monitoring system design.",
+    label: "Alerts",
+    emphasis: "False → True transition only",
+    diagram: `<svg width="100%" viewBox="0 0 280 132">
+  <rect x="14" y="30" width="84" height="38" rx="6" fill="rgba(255,255,255,0.02)" stroke="#4ade80" stroke-width="1.5"/>
+  <text x="56" y="49" text-anchor="middle" font-size="9" fill="#4ade80" font-family="sans-serif" font-weight="600">NORMAL</text>
+  <text x="56" y="61" text-anchor="middle" font-size="7" fill="#4ade80" font-family="sans-serif" opacity=".7">score ≥ 0.15</text>
+  <line x1="98" y1="49" x2="162" y2="49" stroke="#64748b" stroke-width=".8" stroke-dasharray="4 2"/>
+  <text x="130" y="40" text-anchor="middle" font-size="7" fill="#64748b" font-family="sans-serif">crossing</text>
+  <rect x="112" y="44" width="36" height="10" rx="3" fill="rgba(255,255,255,0.02)" stroke="#f87171" stroke-width=".6"/>
+  <text x="130" y="52" text-anchor="middle" font-size="6.5" fill="#f87171" font-family="sans-serif">fires once</text>
+  <path d="M160,45 L166,49 L160,53" stroke="#64748b" stroke-width="1" fill="none" stroke-linecap="round"/>
+  <rect x="168" y="30" width="96" height="38" rx="6" fill="rgba(255,255,255,0.02)" stroke="#f87171" stroke-width="1.5"/>
+  <text x="216" y="49" text-anchor="middle" font-size="9" fill="#f87171" font-family="sans-serif" font-weight="600">ANOMALY</text>
+  <text x="216" y="61" text-anchor="middle" font-size="7" fill="#f87171" font-family="sans-serif" opacity=".7">score &lt; 0.15</text>
+  <text x="140" y="114" text-anchor="middle" font-size="11.5" fill="#cbd5e1" font-family="sans-serif" font-weight="600">
+    <tspan x="140" dy="0">alert fires on false → true transition</tspan>
+    <tspan x="140" dy="12">no flooding</tspan>
+  </text>
+</svg>`,
+  },
+  {
+    title: "Inject Real Failure Scenarios",
+    body:
+      "Three scenarios can be triggered live: thermal spike, HVAC failure, and coolant leak. Each produces a distinct multi-signal pattern that the ML model was trained to detect.",
+    label: "ML",
+    emphasis: "Thermal · HVAC · Coolant",
+    diagram: `<svg width="100%" viewBox="0 0 280 132">
+  <rect x="8" y="18" width="82" height="66" rx="6" fill="rgba(255,255,255,0.02)" stroke="#fb923c" stroke-width="1.5"/>
+  <polygon points="49,28 63,52 35,52" fill="none" stroke="#fb923c" stroke-width="1.5" stroke-linejoin="round"/>
+  <text x="49" y="62" text-anchor="middle" font-size="8" fill="#fb923c" font-family="sans-serif" font-weight="600">Thermal</text>
+  <text x="49" y="74" text-anchor="middle" font-size="8" fill="#fb923c" font-family="sans-serif">Spike</text>
+  <rect x="99" y="18" width="82" height="66" rx="6" fill="rgba(255,255,255,0.02)" stroke="#fbbf24" stroke-width="1.5"/>
+  <line x1="126" y1="28" x2="154" y2="52" stroke="#fbbf24" stroke-width="1.5" stroke-linecap="round"/>
+  <line x1="154" y1="28" x2="126" y2="52" stroke="#fbbf24" stroke-width="1.5" stroke-linecap="round"/>
+  <circle cx="140" cy="40" r="14" fill="none" stroke="#fbbf24" stroke-width="1" stroke-dasharray="3 2"/>
+  <text x="140" y="62" text-anchor="middle" font-size="8" fill="#fbbf24" font-family="sans-serif" font-weight="600">HVAC</text>
+  <text x="140" y="74" text-anchor="middle" font-size="8" fill="#fbbf24" font-family="sans-serif">Failure</text>
+  <rect x="190" y="18" width="82" height="66" rx="6" fill="rgba(255,255,255,0.02)" stroke="#22d3ee" stroke-width="1.5"/>
+  <path d="M231,26 C231,26 218,42 218,50 A13 13 0 0 0 244,50 C244,42 231,26 231,26 Z" fill="none" stroke="#22d3ee" stroke-width="1.5" stroke-linejoin="round"/>
+  <text x="231" y="62" text-anchor="middle" font-size="8" fill="#22d3ee" font-family="sans-serif" font-weight="600">Coolant</text>
+  <text x="231" y="74" text-anchor="middle" font-size="8" fill="#22d3ee" font-family="sans-serif">Leak</text>
+  <text x="140" y="114" text-anchor="middle" font-size="11.5" fill="#cbd5e1" font-family="sans-serif" font-weight="600">
+    <tspan x="140" dy="0">distinct multi-signal pattern per scenario</tspan>
+    <tspan x="140" dy="12">ML detectable</tspan>
+  </text>
+</svg>`,
+  },
+  {
+    title: "The Architectural Tradeoff",
+    body:
+      "Edge detects faster but transmits more data. Central uses roughly half the bandwidth but pays a latency penalty. Neither is strictly better — the right choice depends on the environment.",
+    emphasis: "~48% bandwidth reduction, ~258ms cost",
+    diagram: `<svg width="100%" viewBox="0 0 280 132">
+  <line x1="140" y1="8" x2="140" y2="94" stroke="#64748b" stroke-width=".5" stroke-dasharray="4 3"/>
+  <text x="70" y="16" text-anchor="middle" font-size="9" fill="#22d3ee" font-family="sans-serif" font-weight="600">EDGE</text>
+  <circle cx="70" cy="50" r="22" fill="rgba(255,255,255,0.02)" stroke="#22d3ee" stroke-width="1.5"/>
+  <text x="70" y="47" text-anchor="middle" font-size="7" fill="#22d3ee" font-family="sans-serif">infer</text>
+  <text x="70" y="57" text-anchor="middle" font-size="7" fill="#22d3ee" font-family="sans-serif">locally</text>
+  <text x="70" y="80" text-anchor="middle" font-size="8" fill="#22d3ee" font-family="sans-serif">faster detect</text>
+  <text x="70" y="94" text-anchor="middle" font-size="8.5" fill="#cbd5e1" font-family="sans-serif" font-weight="600">full frame sent</text>
+  <text x="210" y="16" text-anchor="middle" font-size="9" fill="#fbbf24" font-family="sans-serif" font-weight="600">CENTRAL</text>
+  <rect x="178" y="32" width="64" height="36" rx="6" fill="rgba(255,255,255,0.02)" stroke="#fbbf24" stroke-width="1.5"/>
+  <text x="210" y="49" text-anchor="middle" font-size="7" fill="#fbbf24" font-family="sans-serif">infer at</text>
+  <text x="210" y="59" text-anchor="middle" font-size="7" fill="#fbbf24" font-family="sans-serif">server</text>
+  <text x="210" y="80" text-anchor="middle" font-size="8" fill="#fbbf24" font-family="sans-serif">~258ms lag</text>
+  <text x="210" y="94" text-anchor="middle" font-size="8.5" fill="#cbd5e1" font-family="sans-serif" font-weight="600">48% bandwidth</text>
+  <text x="140" y="114" text-anchor="middle" font-size="11.5" fill="#cbd5e1" font-family="sans-serif" font-weight="600">
+    <tspan x="140" dy="0">neither is strictly better</tspan>
+    <tspan x="140" dy="12">tradeoff depends on environment</tspan>
+  </text>
+</svg>`,
+  },
+] as const;
 
 // ── History tab ──────────────────────────────────────────────────────────────
 
@@ -291,6 +483,16 @@ export default function Home() {
   const [draggingHumidityNodeId, setDraggingHumidityNodeId] = useState<
     string | null
   >(null);
+  const [infoSlideIndex, setInfoSlideIndex] = useState(0);
+  const [buttonFlash, setButtonFlash] = useState<{
+    thermal: boolean;
+    hvac: boolean;
+    coolant: boolean;
+  }>({
+    thermal: false,
+    hvac: false,
+    coolant: false,
+  });
   const prevMlReady = useRef<boolean>(false);
   const draggingObstructionNodeIdRef = useRef<string | null>(null);
   const draggingHumidityNodeIdRef = useRef<string | null>(null);
@@ -574,7 +776,7 @@ export default function Home() {
             nodeId.toUpperCase() +
             " | Score: " +
             scoreStr +
-            " | " +
+            " ↓ anomalous | " +
             reason,
         });
       }
@@ -625,6 +827,14 @@ export default function Home() {
     0;
   const selectedHumidityValue =
     humidityDraftByNode[selectedNodeId] ?? selectedTelemetry?.humidity ?? 45;
+  const infoSlide = INFO_SLIDES[infoSlideIndex];
+
+  function flashButton(key: "thermal" | "hvac" | "coolant") {
+    setButtonFlash((prev) => ({ ...prev, [key]: true }));
+    window.setTimeout(() => {
+      setButtonFlash((prev) => ({ ...prev, [key]: false }));
+    }, 220);
+  }
 
   const summaryText = useMemo(() => {
     if (apiError) return `Backend offline: ${apiError}`;
@@ -679,6 +889,7 @@ export default function Home() {
   async function doFanFailure() {
     try {
       setControlsError(null);
+      flashButton("hvac");
       const res = await simulateFanFailure(selectedNodeId);
       setObstructionDraftByNode((prev) => ({
         ...prev,
@@ -737,6 +948,7 @@ export default function Home() {
   async function doThermalSpike() {
     try {
       setControlsError(null);
+      flashButton("thermal");
       await injectThermalSpike(selectedNodeId);
 
       const alertThermal: AlertItem = {
@@ -757,6 +969,7 @@ export default function Home() {
   async function doInjectCoolantLeak() {
     try {
       setControlsError(null);
+      flashButton("coolant");
       const params = new URLSearchParams({
         node_id: selectedNodeId,
         scenario: "coolant_leak",
@@ -796,36 +1009,50 @@ export default function Home() {
 
   return (
     <Box sx={{ minHeight: "100vh", bgcolor: "#0b1220", color: "white", p: 3 }}>
-      <Box sx={{ display: "flex", alignItems: "center", gap: 2, mb: 2 }}>
-        <Typography variant="h4" sx={{ fontWeight: 700 }}>
-          E-Habitat Dashboard
-        </Typography>
-        {anomalyChip}
-        <Typography variant="body2" sx={{ opacity: 0.75 }}>
-          {summaryText}
-        </Typography>
-        <Chip
-          label={
-            activeProfile
-              ? `Profile: ${activeProfile.name}`
-              : "No profile selected"
-          }
-          variant="outlined"
-          size="small"
-          sx={{
-            color: "#fff",
-          }}
-        />
-      </Box>
-
-      <Tabs
-        value={activeTab}
-        onChange={(_, v) => setActiveTab(v as number)}
-        sx={tabsStyle}
+      <Box
+        sx={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          gap: 2,
+          mb: 2,
+          flexWrap: "wrap",
+        }}
       >
-        <Tab label="Dashboard" />
-        <Tab label="History" />
-      </Tabs>
+        <Box sx={{ display: "flex", alignItems: "center", gap: 2, minWidth: 0 }}>
+          <Typography variant="h4" sx={{ fontWeight: 700, whiteSpace: "nowrap" }}>
+            E-Habitat Dashboard
+          </Typography>
+          {anomalyChip}
+          <Typography variant="body2" sx={{ opacity: 0.75, whiteSpace: "nowrap" }}>
+            {summaryText}
+          </Typography>
+        </Box>
+
+        <Box sx={{ display: "flex", alignItems: "center", gap: 2.5, ml: "auto" }}>
+          <Tabs
+            value={activeTab}
+            onChange={(_, v) => setActiveTab(v as number)}
+            sx={headerTabsStyle}
+          >
+            <Tab disableRipple label="Dashboard" />
+            <Tab disableRipple label="History" />
+          </Tabs>
+
+          <Chip
+            label={
+              activeProfile
+                ? `Profile: ${activeProfile.name}`
+                : "No profile selected"
+            }
+            variant="outlined"
+            size="small"
+            sx={{
+              color: "#fff",
+            }}
+          />
+        </Box>
+      </Box>
 
       {activeTab === 0 && (
         <Box
@@ -836,30 +1063,17 @@ export default function Home() {
             mt: 2,
           }}
         >
-          <Paper sx={panelStyle}>
+          <Paper sx={{ ...panelStyle, display: "flex", flexDirection: "column" }}>
             <Typography variant="h6" sx={{ mb: 1 }}>
               Controls Panel
-            </Typography>
-            <Typography variant="body2" sx={{ opacity: 0.7 }}>
-              Controls apply only to the currently selected node.
             </Typography>
 
             <Box sx={{ mt: 2 }}>
               <Typography variant="caption" sx={{ opacity: 0.7 }}>
-                API status
-              </Typography>
-              <Typography variant="body2" sx={{ mt: 0.5 }}>
-                {apiError
-                  ? "Disconnected"
-                  : Object.keys(telemetryByNode).length
-                    ? "Connected"
-                    : "Connecting..."}
-              </Typography>
-            </Box>
-
-            <Box sx={{ mt: 3 }}>
-              <Typography variant="caption" sx={{ opacity: 0.7 }}>
                 Active profile
+              </Typography>
+              <Typography variant="caption" sx={{ opacity: 0.5, display: "block" }}>
+                Saved sensor parameter sets
               </Typography>
 
               <TextField
@@ -922,6 +1136,9 @@ export default function Home() {
               <Typography variant="caption" sx={{ opacity: 0.7 }}>
                 Focus node
               </Typography>
+              <Typography variant="caption" sx={{ opacity: 0.5, display: "block" }}>
+                Selects node shown in Live Gauges
+              </Typography>
               <Stack
                 direction="row"
                 spacing={1}
@@ -941,72 +1158,63 @@ export default function Home() {
               </Stack>
             </Box>
 
-            <Box sx={{ mt: 2 }}>
-              <Typography variant="body2" sx={{ opacity: 0.9 }}>
-                Selected node: <strong>{selectedNodeId}</strong>
-              </Typography>
-            </Box>
-
             <Box sx={{ mt: 3 }}>
-              <Typography variant="caption" sx={{ opacity: 0.7 }}>
-                Airflow obstruction (0 = none, 1 = fully blocked)
-              </Typography>
-              <Slider
-                value={selectedObstructionValue}
-                min={0}
-                max={1}
-                step={0.05}
-                onChange={(_, v) => {
-                  setDraggingObstructionNodeId(selectedNodeId);
-                  draggingObstructionNodeIdRef.current = selectedNodeId;
-                  setObstructionDraftByNode((prev) => ({
-                    ...prev,
-                    [selectedNodeId]: v as number,
-                  }));
+              <Box
+                sx={{
+                  display: "grid",
+                  gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+                  gap: 2,
                 }}
-                onChangeCommitted={(_, v) =>
-                  applyObstruction(selectedNodeId, v as number)
-                }
-                sx={{ mt: 1 }}
-              />
-              <Typography variant="body2" sx={{ mt: 0.5, opacity: 0.8 }}>
-                {selectedObstructionValue.toFixed(2)} on {selectedNodeId}
-              </Typography>
-              <Stack direction="row" spacing={1} sx={{ mt: 1 }}>
-                <Button variant="contained" onClick={doFanFailure}>
-                  Fan failure
-                </Button>
-                <Button variant="outlined" onClick={doResetAirflow}>
-                  Reset airflow
-                </Button>
-              </Stack>
-            </Box>
+              >
+                <Box>
+                  <Typography variant="caption" sx={{ opacity: 0.7 }}>
+                    Airflow obstruction
+                  </Typography>
+                  <Slider
+                    value={selectedObstructionValue}
+                    min={0}
+                    max={1}
+                    step={0.05}
+                    onChange={(_, v) => {
+                      setDraggingObstructionNodeId(selectedNodeId);
+                      draggingObstructionNodeIdRef.current = selectedNodeId;
+                      setObstructionDraftByNode((prev) => ({
+                        ...prev,
+                        [selectedNodeId]: v as number,
+                      }));
+                    }}
+                    onChangeCommitted={(_, v) =>
+                      applyObstruction(selectedNodeId, v as number)
+                    }
+                    sx={{ mt: 1 }}
+                  />
+                </Box>
 
-            <Box sx={{ mt: 3 }}>
-              <Typography variant="caption" sx={{ opacity: 0.7 }}>
-                Humidity (%)
-              </Typography>
-              <Slider
-                value={selectedHumidityValue}
-                min={0}
-                max={100}
-                step={1}
-                onChange={(_, v) => {
-                  setDraggingHumidityNodeId(selectedNodeId);
-                  draggingHumidityNodeIdRef.current = selectedNodeId;
-                  setHumidityDraftByNode((prev) => ({
-                    ...prev,
-                    [selectedNodeId]: v as number,
-                  }));
-                }}
-                onChangeCommitted={(_, v) =>
-                  applyHumidity(selectedNodeId, v as number)
-                }
-                sx={{ mt: 1 }}
-              />
-              <Typography variant="body2" sx={{ mt: 0.5, opacity: 0.8 }}>
-                {selectedHumidityValue.toFixed(1)}% on {selectedNodeId}
-              </Typography>
+                <Box>
+                  <Typography variant="caption" sx={{ opacity: 0.7 }}>
+                    Humidity
+                  </Typography>
+                  <Slider
+                    value={selectedHumidityValue}
+                    min={0}
+                    max={100}
+                    step={1}
+                    onChange={(_, v) => {
+                      setDraggingHumidityNodeId(selectedNodeId);
+                      draggingHumidityNodeIdRef.current = selectedNodeId;
+                      setHumidityDraftByNode((prev) => ({
+                        ...prev,
+                        [selectedNodeId]: v as number,
+                      }));
+                    }}
+                    onChangeCommitted={(_, v) =>
+                      applyHumidity(selectedNodeId, v as number)
+                    }
+                    sx={{ mt: 1 }}
+                  />
+                </Box>
+              </Box>
+
               {controlsError && (
                 <Typography variant="body2" sx={{ mt: 1, opacity: 0.85 }}>
                   {controlsError}
@@ -1021,151 +1229,241 @@ export default function Home() {
                 Anomalies
               </Typography>
               <Button
-                variant="contained"
-                color="warning"
+                sx={thermalButtonStyle(buttonFlash.thermal)}
                 onClick={doThermalSpike}
               >
                 Inject Thermal Spike
               </Button>
               <Button
-                variant="contained"
-                sx={{ bgcolor: "#3b82f6" }}
+                sx={warningGhostButtonStyle(buttonFlash.hvac)}
+                onClick={doFanFailure}
+              >
+                HVAC Failure
+              </Button>
+              <Button
+                sx={coolantButtonStyle(buttonFlash.coolant)}
                 onClick={doInjectCoolantLeak}
               >
                 Inject Coolant Leak
               </Button>
             </Box>
 
-            <Box sx={{ mt: 3 }}>
-              <Typography variant="caption" sx={{ opacity: 0.7 }}>
-                ML status
-              </Typography>
-              <Typography variant="body2" sx={{ mt: 0.5 }}>
-                {!mlStatus
-                  ? "Loading..."
-                  : mlStatus.model_loaded
-                    ? `Model loaded · window ${mlStatus.points_in_window}/${mlStatus.window_size}${
-                        mlStatus.window_ready ? " · ready" : " · warming up"
-                      }`
-                    : "Model not loaded"}
-              </Typography>
-              {mlStatus?.model_load_error && (
-                <Typography variant="body2" sx={{ mt: 1, opacity: 0.85 }}>
-                  {mlStatus.model_load_error}
+            <Paper sx={infoPanelStyle}>
+              <Box
+                sx={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  gap: 1,
+                  mb: 1.5,
+                }}
+              >
+                <Typography variant="caption" sx={{ opacity: 0.7 }}>
+                  Project Concepts
                 </Typography>
-              )}
-              {mlError && (
-                <Typography variant="body2" sx={{ mt: 1, opacity: 0.85 }}>
-                  {mlError}
+                <Typography variant="caption" sx={{ opacity: 0.55 }}>
+                  {infoSlideIndex + 1} / {INFO_SLIDES.length}
                 </Typography>
-              )}
-              <Button variant="outlined" onClick={doReloadMl} sx={{ mt: 1 }}>
-                Reload ML model
-              </Button>
-            </Box>
+              </Box>
+
+              <Box sx={{ flex: 1, minHeight: 178, display: "flex", flexDirection: "column" }}>
+                {infoSlide.label ? (
+                  <Chip
+                    label={infoSlide.label}
+                    size="small"
+                    sx={{
+                      mb: 1.25,
+                      color: "#cbd5e1",
+                      bgcolor: "rgba(255,255,255,0.06)",
+                      border: "1px solid rgba(255,255,255,0.10)",
+                    }}
+                  />
+                ) : null}
+
+                <Typography variant="subtitle1" sx={{ fontWeight: 700, lineHeight: 1.3 }}>
+                  {infoSlide.title}
+                </Typography>
+
+                <Typography
+                  variant="body2"
+                  sx={{ mt: 1, opacity: 0.82, lineHeight: 1.65 }}
+                >
+                  {infoSlide.body}
+                </Typography>
+
+                <Typography
+                  variant="body2"
+                  sx={{
+                    mt: 1.5,
+                    color: "#93c5fd",
+                    fontWeight: 600,
+                    lineHeight: 1.5,
+                  }}
+                >
+                  {infoSlide.emphasis}
+                </Typography>
+
+                <Box
+                  sx={{
+                    mt: 1.5,
+                    pt: 1.5,
+                    flex: 1,
+                    borderTop: "1px solid rgba(255,255,255,0.10)",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    "& svg": {
+                      display: "block",
+                      width: "100%",
+                      maxWidth: "100%",
+                      height: "100%",
+                      maxHeight: "100%",
+                    },
+                  }}
+                  dangerouslySetInnerHTML={{ __html: infoSlide.diagram }}
+                />
+              </Box>
+
+              <Box
+                sx={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  gap: 1,
+                  mt: 1.5,
+                }}
+              >
+                <Button
+                  sx={slideArrowButtonStyle}
+                  onClick={() =>
+                    setInfoSlideIndex((prev) =>
+                      prev === 0 ? INFO_SLIDES.length - 1 : prev - 1,
+                    )
+                  }
+                >
+                  ‹
+                </Button>
+
+                <Box
+                  sx={{
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    gap: 0.75,
+                    flex: 1,
+                  }}
+                >
+                  {INFO_SLIDES.map((_, index) => (
+                    <Box
+                      key={index}
+                      sx={{
+                        width: index === infoSlideIndex ? 18 : 6,
+                        height: 6,
+                        borderRadius: 999,
+                        bgcolor:
+                          index === infoSlideIndex
+                            ? "rgba(147, 197, 253, 0.95)"
+                            : "rgba(255,255,255,0.18)",
+                        transition: "all 160ms ease",
+                      }}
+                    />
+                  ))}
+                </Box>
+
+                <Button
+                  sx={slideArrowButtonStyle}
+                  onClick={() =>
+                    setInfoSlideIndex((prev) => (prev + 1) % INFO_SLIDES.length)
+                  }
+                >
+                  ›
+                </Button>
+              </Box>
+            </Paper>
           </Paper>
 
           <Box sx={{ display: "grid", gap: 2 }}>
-            {selectedTelemetry && (
-              <NodeGauges
-                temperature={selectedTelemetry.temperature}
-                cpuLoad={selectedTelemetry.cpu_load}
-                humidity={selectedTelemetry.humidity}
-                airflow={selectedTelemetry.airflow}
-                isAnomaly={selectedTelemetry.is_anomaly === true}
-                nodeId={selectedTelemetry.node_id}
-              />
-            )}
+            <Box
+              sx={{
+                display: "grid",
+                gridTemplateColumns: {
+                  xs: "1fr",
+                  xl: "minmax(0, 1fr) 320px",
+                },
+                gap: 2,
+                alignItems: "stretch",
+              }}
+            >
+              <Box sx={{ display: "grid", gap: 2, minWidth: 0 }}>
+                <TopologyOverview
+                  telemetryByNode={telemetryByNode}
+                  selectedNodeId={selectedNodeId}
+                  onSelectNode={setSelectedNodeId}
+                  centralStatus={centralStatus}
+                />
 
-            <AlertsFeed alerts={alerts} />
+                {selectedTelemetry && (
+                  <NodeGauges
+                    temperature={selectedTelemetry.temperature}
+                    cpuLoad={selectedTelemetry.cpu_load}
+                    humidity={selectedTelemetry.humidity}
+                    airflow={selectedTelemetry.airflow}
+                    isAnomaly={selectedTelemetry.is_anomaly === true}
+                    nodeId={selectedTelemetry.node_id}
+                  />
+                )}
+              </Box>
 
-            <Paper sx={panelStyle}>
-              <Typography variant="h6" sx={{ mb: 2 }}>
-                Central vs Edge Comparison
-              </Typography>
               <Box
                 sx={{
-                  display: "grid",
-                  gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-                  gap: 2,
+                  display: "flex",
+                  flexDirection: "column",
+                  minHeight: { xl: "100%" },
                 }}
               >
-                {NODE_IDS.map((nodeId) => {
-                  const s = centralStatus[nodeId];
-                  const fmt = (v: number | null | undefined, unit: string) =>
-                    v == null
-                      ? "Waiting for anomaly..."
-                      : `${v.toFixed(2)} ${unit}`;
-                  const bwRatio =
-                    s?.bytes_edge != null &&
-                    s.bytes_edge > 0 &&
-                    s?.bytes_central != null
-                      ? ((s.bytes_central / s.bytes_edge) * 100).toFixed(1) +
-                        "%"
-                      : "Waiting for anomaly...";
-                  return (
-                    <Box
-                      key={nodeId}
-                      sx={{
-                        p: 1.5,
-                        borderRadius: 2,
-                        bgcolor: "rgba(255,255,255,0.06)",
-                        border: "1px solid rgba(255,255,255,0.10)",
-                      }}
-                    >
-                      <Typography
-                        variant="subtitle2"
-                        sx={{ mb: 1, opacity: 0.9, fontWeight: 700 }}
-                      >
-                        {nodeId.toUpperCase()}
-                      </Typography>
-                      <Stack spacing={0.5}>
-                        <Typography variant="body2">
-                          <span style={{ opacity: 0.6 }}>Edge latency: </span>
-                          {fmt(s?.edge_latency_ms, "ms")}
-                        </Typography>
-                        <Typography variant="body2">
-                          <span style={{ opacity: 0.6 }}>
-                            Central latency:{" "}
-                          </span>
-                          {fmt(s?.central_latency_ms, "ms")}
-                        </Typography>
-                        <Typography variant="body2">
-                          <span style={{ opacity: 0.6 }}>Latency delta: </span>
-                          {fmt(s?.latency_delta_ms, "ms")}
-                        </Typography>
-                        <Typography variant="body2">
-                          <span style={{ opacity: 0.6 }}>Bytes (edge): </span>
-                          {s?.bytes_edge != null
-                            ? `${s.bytes_edge} B`
-                            : "Waiting for anomaly..."}
-                        </Typography>
-                        <Typography variant="body2">
-                          <span style={{ opacity: 0.6 }}>
-                            Bytes (central):{" "}
-                          </span>
-                          {s?.bytes_central != null
-                            ? `${s.bytes_central} B`
-                            : "Waiting for anomaly..."}
-                        </Typography>
-                        <Typography variant="body2">
-                          <span style={{ opacity: 0.6 }}>BW ratio: </span>
-                          {bwRatio}
-                        </Typography>
-                      </Stack>
-                    </Box>
-                  );
-                })}
-              </Box>
-            </Paper>
+                <Box sx={{ flex: 1, minHeight: 0 }}>
+                  <AlertsFeed alerts={alerts} fillHeight />
+                </Box>
 
-            <NodeGrid
-              telemetryByNode={telemetryByNode}
-              apiError={apiError}
-              historyByNode={historyByNode}
-              selectedNodeId={selectedNodeId}
-              onSelectNode={setSelectedNodeId}
-            />
+                <Paper sx={{ ...panelStyle, mt: "auto" }}>
+                  <Typography variant="h6" sx={{ mb: 1.5 }}>
+                    ML Status
+                  </Typography>
+                  <Typography variant="body2" sx={{ opacity: 0.9 }}>
+                    {!mlStatus
+                      ? "Loading..."
+                      : mlStatus.model_loaded
+                        ? `Model loaded · window ${mlStatus.points_in_window}/${mlStatus.window_size}${
+                            mlStatus.window_ready ? " · ready" : " · warming up"
+                          }`
+                        : "Model not loaded"}
+                  </Typography>
+                  {mlStatus?.model_load_error && (
+                    <Typography variant="body2" sx={{ mt: 1, opacity: 0.85 }}>
+                      {mlStatus.model_load_error}
+                    </Typography>
+                  )}
+                  {mlError && (
+                    <Typography variant="body2" sx={{ mt: 1, opacity: 0.85 }}>
+                      {mlError}
+                    </Typography>
+                  )}
+                  <Button variant="outlined" onClick={doReloadMl} sx={{ mt: 1.5 }}>
+                    Reload ML model
+                  </Button>
+                </Paper>
+              </Box>
+            </Box>
+
+            <Box>
+              <NodeGrid
+                telemetryByNode={telemetryByNode}
+                apiError={apiError}
+                historyByNode={historyByNode}
+                selectedNodeId={selectedNodeId}
+                onSelectNode={setSelectedNodeId}
+              />
+            </Box>
           </Box>
         </Box>
       )}
@@ -1196,6 +1494,26 @@ const tabsStyle = {
   "& .MuiTabs-indicator": { backgroundColor: "#3b82f6" },
 };
 
+const headerTabsStyle = {
+  minHeight: 0,
+  "& .MuiTabs-flexContainer": {
+    gap: 0.5,
+  },
+  "& .MuiTab-root": {
+    minHeight: 0,
+    px: 1.25,
+    py: 0.5,
+    color: "rgba(255,255,255,0.62)",
+    textTransform: "none" as const,
+    fontWeight: 500,
+    "&.Mui-selected": { color: "white" },
+  },
+  "& .MuiTabs-indicator": {
+    backgroundColor: "#3b82f6",
+    height: 2,
+  },
+};
+
 const thStyle = {
   color: "rgba(255,255,255,0.6)",
   borderBottom: "1px solid rgba(255,255,255,0.12)",
@@ -1217,4 +1535,150 @@ const statCardStyle = {
   borderRadius: 2,
   color: "white",
   textAlign: "center" as const,
+};
+
+const buttonBaseStyle = {
+  borderRadius: "12px",
+  px: 2,
+  py: 1.1,
+  fontWeight: 700,
+  letterSpacing: "0.03em",
+  textTransform: "none" as const,
+  transition:
+    "transform 120ms ease, box-shadow 160ms ease, background 160ms ease, border-color 160ms ease",
+  "&:hover": {
+    transform: "translateY(-1px)",
+  },
+  "&:active": {
+    transform: "scale(0.97)",
+  },
+};
+
+const thermalButtonStyle = (isFlashing: boolean) => ({
+  ...buttonBaseStyle,
+  color: "#fff",
+  border: "1px solid rgba(249, 115, 22, 0.45)",
+  background: "linear-gradient(135deg, rgba(249, 115, 22, 0.28), rgba(234, 88, 12, 0.22))",
+  boxShadow: isFlashing
+    ? "none"
+    : "0 0 12px rgba(249, 115, 22, 0.28), inset 0 1px 0 rgba(255,255,255,0.10)",
+  backdropFilter: "blur(8px)",
+  ...(isFlashing
+    ? {
+        background:
+          "radial-gradient(circle at 50% 35%, rgba(255,255,255,0.18), transparent 32%), linear-gradient(135deg, rgba(251, 146, 60, 0.44), rgba(249, 115, 22, 0.38))",
+        borderColor: "rgba(255, 186, 120, 0.7)",
+      }
+    : {}),
+  "&:hover": {
+    ...buttonBaseStyle["&:hover"],
+    background:
+      "linear-gradient(135deg, rgba(251, 146, 60, 0.34), rgba(249, 115, 22, 0.28))",
+    borderColor: "rgba(249, 115, 22, 0.6)",
+    boxShadow: "0 0 16px rgba(249, 115, 22, 0.34), inset 0 1px 0 rgba(255,255,255,0.14)",
+  },
+  "&:active": {
+    ...buttonBaseStyle["&:active"],
+    background:
+      "radial-gradient(circle at 50% 35%, rgba(255,255,255,0.18), transparent 32%), linear-gradient(135deg, rgba(251, 146, 60, 0.44), rgba(249, 115, 22, 0.38))",
+    borderColor: "rgba(255, 186, 120, 0.7)",
+    boxShadow: "none",
+  },
+});
+
+const warningGhostButtonStyle = (isFlashing: boolean) => ({
+  ...buttonBaseStyle,
+  color: "#c4b5fd",
+  border: "1px solid rgba(168, 85, 247, 0.6)",
+  background: isFlashing ? "rgba(168, 85, 247, 0.18)" : "transparent",
+  boxShadow: isFlashing ? "none" : "0 0 12px rgba(168, 85, 247, 0.25)",
+  ...(isFlashing
+    ? {
+        background:
+          "radial-gradient(circle at 50% 35%, rgba(255,255,255,0.16), transparent 32%), rgba(168, 85, 247, 0.18)",
+        borderColor: "rgba(196, 181, 253, 0.82)",
+      }
+    : {}),
+  "&:hover": {
+    ...buttonBaseStyle["&:hover"],
+    background: "rgba(168, 85, 247, 0.10)",
+    borderColor: "rgba(168, 85, 247, 0.8)",
+    boxShadow: "0 0 16px rgba(168, 85, 247, 0.30)",
+  },
+  "&:active": {
+    ...buttonBaseStyle["&:active"],
+    background:
+      "radial-gradient(circle at 50% 35%, rgba(255,255,255,0.16), transparent 32%), rgba(168, 85, 247, 0.18)",
+    borderColor: "rgba(196, 181, 253, 0.82)",
+    boxShadow: "none",
+  },
+});
+
+const safeGhostButtonStyle = {
+  ...buttonBaseStyle,
+  color: "#22c55e",
+  border: "1px solid rgba(34, 197, 94, 0.6)",
+  background: "rgba(34, 197, 94, 0.03)",
+  boxShadow: "0 0 12px rgba(34, 197, 94, 0.25)",
+  "&:hover": {
+    ...buttonBaseStyle["&:hover"],
+    background: "rgba(34, 197, 94, 0.10)",
+    borderColor: "rgba(34, 197, 94, 0.8)",
+    boxShadow: "0 0 16px rgba(34, 197, 94, 0.30)",
+  },
+};
+
+const coolantButtonStyle = (isFlashing: boolean) => ({
+  ...buttonBaseStyle,
+  color: "#93c5fd",
+  border: "1px solid rgba(59, 130, 246, 0.55)",
+  background: isFlashing ? "rgba(59, 130, 246, 0.18)" : "rgba(59, 130, 246, 0.04)",
+  boxShadow: isFlashing ? "none" : "0 0 12px rgba(59, 130, 246, 0.24)",
+  ...(isFlashing
+    ? {
+        background:
+          "radial-gradient(circle at 50% 35%, rgba(255,255,255,0.16), transparent 32%), rgba(59, 130, 246, 0.18)",
+        borderColor: "rgba(147, 197, 253, 0.82)",
+      }
+    : {}),
+  "&:hover": {
+    ...buttonBaseStyle["&:hover"],
+    background: "rgba(59, 130, 246, 0.10)",
+    borderColor: "rgba(59, 130, 246, 0.78)",
+    boxShadow: "0 0 16px rgba(59, 130, 246, 0.30)",
+  },
+  "&:active": {
+    ...buttonBaseStyle["&:active"],
+    background:
+      "radial-gradient(circle at 50% 35%, rgba(255,255,255,0.16), transparent 32%), rgba(59, 130, 246, 0.18)",
+    borderColor: "rgba(147, 197, 253, 0.82)",
+    boxShadow: "none",
+  },
+});
+
+const infoPanelStyle = {
+  mt: 2,
+  p: 2,
+  flex: 1,
+  display: "flex",
+  flexDirection: "column",
+  borderRadius: 3,
+  bgcolor: "rgba(255,255,255,0.035)",
+  border: "1px solid rgba(255,255,255,0.10)",
+  color: "white",
+};
+
+const slideArrowButtonStyle = {
+  minWidth: 36,
+  width: 36,
+  height: 36,
+  borderRadius: "10px",
+  color: "#e2e8f0",
+  border: "1px solid rgba(255,255,255,0.12)",
+  background: "rgba(255,255,255,0.04)",
+  fontSize: "1.15rem",
+  lineHeight: 1,
+  "&:hover": {
+    background: "rgba(255,255,255,0.08)",
+  },
 };
