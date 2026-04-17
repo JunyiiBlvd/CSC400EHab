@@ -156,12 +156,27 @@ class VirtualNode:
         cpu_load = self._generate_cpu_load()
         
         # 2. Airflow responds to last step's temperature
+        '''
         if self.hvac_failure_remaining_steps > 0:
             elapsed = self.hvac_failure_total_steps - self.hvac_failure_remaining_steps
             ramp_ratio = min(1.0, elapsed / 15.0)
             current_airflow = self.airflow_model.nominal_flow * (1.0 - ramp_ratio)
             self.airflow_model.current_flow = current_airflow
             self.hvac_failure_remaining_steps -= 1
+        elif self.hvac_lag_steps > 0:
+        '''
+        if self.hvac_failure_remaining_steps > 0:
+            elapsed = self.hvac_failure_total_steps - self.hvac_failure_remaining_steps
+            ramp_ratio = min(1.0, elapsed / 15.0)
+
+            self.airflow_model.obstruction_ratio = ramp_ratio
+            current_airflow = self.airflow_model.nominal_flow * (1.0 - ramp_ratio)
+            self.airflow_model.current_flow = current_airflow
+
+            self.hvac_failure_remaining_steps -= 1
+
+            if self.hvac_failure_remaining_steps == 0:
+                    self.airflow_model.obstruction_ratio = 0.0
         elif self.hvac_lag_steps > 0:
             current_airflow = self._frozen_airflow
             self.hvac_lag_steps -= 1

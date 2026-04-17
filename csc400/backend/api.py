@@ -141,7 +141,7 @@ def fan_failure(body: NodeTargetRequest):
 
     if central_server is not None:
         central_server.record_injection(body.node_id, time.time())
-    return {"ok": True, "node_id": body.node_id, "obstruction_ratio": 1.0}
+    return {"ok": True, "node_id": body.node_id}
 
 
 @app.post("/api/controls/reset_airflow")

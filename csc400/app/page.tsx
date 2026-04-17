@@ -60,8 +60,7 @@ type InfoSlide = {
 const INFO_SLIDES: readonly InfoSlide[] = [
   {
     title: "Virtual Server Room Simulation",
-    body:
-      "E-Habitat simulates a three-node server room environment with live thermal, humidity, airflow, and CPU telemetry. It runs two anomaly detection architectures simultaneously to compare their real-world tradeoffs.",
+    body: "E-Habitat simulates a three-node server room environment with live thermal, humidity, airflow, and CPU telemetry. It runs two anomaly detection architectures simultaneously to compare their real-world tradeoffs.",
     emphasis: "Two architectures. One dataset. Live comparison.",
     diagram: `<svg width="100%" viewBox="0 0 280 132">
   <circle cx="50" cy="38" r="16" fill="rgba(255,255,255,0.02)" stroke="#22d3ee" stroke-width="1.5"/><text x="50" y="41" text-anchor="middle" font-size="8" fill="#22d3ee" font-family="sans-serif" font-weight="500">N-1</text>
@@ -78,8 +77,7 @@ const INFO_SLIDES: readonly InfoSlide[] = [
   },
   {
     title: "Three Independent Sensor Nodes",
-    body:
-      "NODE-1, NODE-2, and NODE-3 each run a full physics simulation — heat transfer, fan airflow, and humidity drift. Each node operates independently and streams data once per second.",
+    body: "NODE-1, NODE-2, and NODE-3 each run a full physics simulation — heat transfer, fan airflow, and humidity drift. Each node operates independently and streams data once per second.",
     label: "Edge",
     emphasis: "1 Hz telemetry per node",
     diagram: `<svg width="100%" viewBox="0 0 280 132">
@@ -109,8 +107,7 @@ const INFO_SLIDES: readonly InfoSlide[] = [
   },
   {
     title: "ML Runs at the Node",
-    body:
-      "Each node runs an Isolation Forest model locally before telemetry leaves. Anomaly scores are computed at the source — no round trip required.",
+    body: "Each node runs an Isolation Forest model locally before telemetry leaves. Anomaly scores are computed at the source — no round trip required.",
     label: "Edge",
     emphasis: "Score < 0.15 → anomaly flagged",
     diagram: `<svg width="100%" viewBox="0 0 280 132">
@@ -134,8 +131,7 @@ const INFO_SLIDES: readonly InfoSlide[] = [
   },
   {
     title: "Server Collects, Then Decides",
-    body:
-      "The central server receives raw telemetry from all three nodes and runs its own inference pass. Detection happens after the data travels — introducing measurable latency.",
+    body: "The central server receives raw telemetry from all three nodes and runs its own inference pass. Detection happens after the data travels — introducing measurable latency.",
     label: "Central",
     emphasis: "~258ms average detection lag",
     diagram: `<svg width="100%" viewBox="0 0 280 132">
@@ -164,8 +160,7 @@ const INFO_SLIDES: readonly InfoSlide[] = [
   },
   {
     title: "Alerts on State Transitions",
-    body:
-      "Alerts fire only on a normal → anomalous transition, not on every anomalous frame. This prevents alert flooding during sustained failures and reflects real monitoring system design.",
+    body: "Alerts fire only on a normal → anomalous transition, not on every anomalous frame. This prevents alert flooding during sustained failures and reflects real monitoring system design.",
     label: "Alerts",
     emphasis: "False → True transition only",
     diagram: `<svg width="100%" viewBox="0 0 280 132">
@@ -188,8 +183,7 @@ const INFO_SLIDES: readonly InfoSlide[] = [
   },
   {
     title: "Inject Real Failure Scenarios",
-    body:
-      "Three scenarios can be triggered live: thermal spike, HVAC failure, and coolant leak. Each produces a distinct multi-signal pattern that the ML model was trained to detect.",
+    body: "Three scenarios can be triggered live: thermal spike, HVAC failure, and coolant leak. Each produces a distinct multi-signal pattern that the ML model was trained to detect.",
     label: "ML",
     emphasis: "Thermal · HVAC · Coolant",
     diagram: `<svg width="100%" viewBox="0 0 280 132">
@@ -215,8 +209,7 @@ const INFO_SLIDES: readonly InfoSlide[] = [
   },
   {
     title: "The Architectural Tradeoff",
-    body:
-      "Edge detects faster but transmits more data. Central uses roughly half the bandwidth but pays a latency penalty. Neither is strictly better — the right choice depends on the environment.",
+    body: "Edge detects faster but transmits more data. Central uses roughly half the bandwidth but pays a latency penalty. Neither is strictly better — the right choice depends on the environment.",
     emphasis: "~48% bandwidth reduction, ~258ms cost",
     diagram: `<svg width="100%" viewBox="0 0 280 132">
   <line x1="140" y1="8" x2="140" y2="94" stroke="#64748b" stroke-width=".5" stroke-dasharray="4 3"/>
@@ -467,7 +460,9 @@ export default function Home() {
   const [apiError, setApiError] = useState<string | null>(null);
   const [selectedNodeId, setSelectedNodeId] = useState<string>("node-1");
   const [historyByNode, setHistoryByNode] = useState<HistoryByNode>({});
-  const [alertsByProfile, setAlertsByProfile] = useState<Record<number, AlertItem[]>>({});
+  const [alertsByProfile, setAlertsByProfile] = useState<
+    Record<number, AlertItem[]>
+  >({});
   const [controlsError, setControlsError] = useState<string | null>(null);
   const [mlStatus, setMlStatus] = useState<MlStatus | null>(null);
   const [mlError, setMlError] = useState<string | null>(null);
@@ -824,7 +819,7 @@ export default function Home() {
   const selectedObstructionValue =
     obstructionDraftByNode[selectedNodeId] ??
     selectedTelemetry?.obstruction_ratio ??
-    0;
+    1;
   const selectedHumidityValue =
     humidityDraftByNode[selectedNodeId] ?? selectedTelemetry?.humidity ?? 45;
   const infoSlide = INFO_SLIDES[infoSlideIndex];
@@ -1019,17 +1014,27 @@ export default function Home() {
           flexWrap: "wrap",
         }}
       >
-        <Box sx={{ display: "flex", alignItems: "center", gap: 2, minWidth: 0 }}>
-          <Typography variant="h4" sx={{ fontWeight: 700, whiteSpace: "nowrap" }}>
+        <Box
+          sx={{ display: "flex", alignItems: "center", gap: 2, minWidth: 0 }}
+        >
+          <Typography
+            variant="h4"
+            sx={{ fontWeight: 700, whiteSpace: "nowrap" }}
+          >
             E-Habitat Dashboard
           </Typography>
           {anomalyChip}
-          <Typography variant="body2" sx={{ opacity: 0.75, whiteSpace: "nowrap" }}>
+          <Typography
+            variant="body2"
+            sx={{ opacity: 0.75, whiteSpace: "nowrap" }}
+          >
             {summaryText}
           </Typography>
         </Box>
 
-        <Box sx={{ display: "flex", alignItems: "center", gap: 2.5, ml: "auto" }}>
+        <Box
+          sx={{ display: "flex", alignItems: "center", gap: 2.5, ml: "auto" }}
+        >
           <Tabs
             value={activeTab}
             onChange={(_, v) => setActiveTab(v as number)}
@@ -1063,7 +1068,9 @@ export default function Home() {
             mt: 2,
           }}
         >
-          <Paper sx={{ ...panelStyle, display: "flex", flexDirection: "column" }}>
+          <Paper
+            sx={{ ...panelStyle, display: "flex", flexDirection: "column" }}
+          >
             <Typography variant="h6" sx={{ mb: 1 }}>
               Controls Panel
             </Typography>
@@ -1072,7 +1079,10 @@ export default function Home() {
               <Typography variant="caption" sx={{ opacity: 0.7 }}>
                 Active profile
               </Typography>
-              <Typography variant="caption" sx={{ opacity: 0.5, display: "block" }}>
+              <Typography
+                variant="caption"
+                sx={{ opacity: 0.5, display: "block" }}
+              >
                 Saved sensor parameter sets
               </Typography>
 
@@ -1136,7 +1146,10 @@ export default function Home() {
               <Typography variant="caption" sx={{ opacity: 0.7 }}>
                 Focus node
               </Typography>
-              <Typography variant="caption" sx={{ opacity: 0.5, display: "block" }}>
+              <Typography
+                variant="caption"
+                sx={{ opacity: 0.5, display: "block" }}
+              >
                 Selects node shown in Live Gauges
               </Typography>
               <Stack
@@ -1266,7 +1279,14 @@ export default function Home() {
                 </Typography>
               </Box>
 
-              <Box sx={{ flex: 1, minHeight: 178, display: "flex", flexDirection: "column" }}>
+              <Box
+                sx={{
+                  flex: 1,
+                  minHeight: 178,
+                  display: "flex",
+                  flexDirection: "column",
+                }}
+              >
                 {infoSlide.label ? (
                   <Chip
                     label={infoSlide.label}
@@ -1280,7 +1300,10 @@ export default function Home() {
                   />
                 ) : null}
 
-                <Typography variant="subtitle1" sx={{ fontWeight: 700, lineHeight: 1.3 }}>
+                <Typography
+                  variant="subtitle1"
+                  sx={{ fontWeight: 700, lineHeight: 1.3 }}
+                >
                   {infoSlide.title}
                 </Typography>
 
@@ -1448,7 +1471,11 @@ export default function Home() {
                       {mlError}
                     </Typography>
                   )}
-                  <Button variant="outlined" onClick={doReloadMl} sx={{ mt: 1.5 }}>
+                  <Button
+                    variant="outlined"
+                    onClick={doReloadMl}
+                    sx={{ mt: 1.5 }}
+                  >
                     Reload ML model
                   </Button>
                 </Paper>
@@ -1558,7 +1585,8 @@ const thermalButtonStyle = (isFlashing: boolean) => ({
   ...buttonBaseStyle,
   color: "#fff",
   border: "1px solid rgba(249, 115, 22, 0.45)",
-  background: "linear-gradient(135deg, rgba(249, 115, 22, 0.28), rgba(234, 88, 12, 0.22))",
+  background:
+    "linear-gradient(135deg, rgba(249, 115, 22, 0.28), rgba(234, 88, 12, 0.22))",
   boxShadow: isFlashing
     ? "none"
     : "0 0 12px rgba(249, 115, 22, 0.28), inset 0 1px 0 rgba(255,255,255,0.10)",
@@ -1575,7 +1603,8 @@ const thermalButtonStyle = (isFlashing: boolean) => ({
     background:
       "linear-gradient(135deg, rgba(251, 146, 60, 0.34), rgba(249, 115, 22, 0.28))",
     borderColor: "rgba(249, 115, 22, 0.6)",
-    boxShadow: "0 0 16px rgba(249, 115, 22, 0.34), inset 0 1px 0 rgba(255,255,255,0.14)",
+    boxShadow:
+      "0 0 16px rgba(249, 115, 22, 0.34), inset 0 1px 0 rgba(255,255,255,0.14)",
   },
   "&:active": {
     ...buttonBaseStyle["&:active"],
@@ -1632,7 +1661,9 @@ const coolantButtonStyle = (isFlashing: boolean) => ({
   ...buttonBaseStyle,
   color: "#93c5fd",
   border: "1px solid rgba(59, 130, 246, 0.55)",
-  background: isFlashing ? "rgba(59, 130, 246, 0.18)" : "rgba(59, 130, 246, 0.04)",
+  background: isFlashing
+    ? "rgba(59, 130, 246, 0.18)"
+    : "rgba(59, 130, 246, 0.04)",
   boxShadow: isFlashing ? "none" : "0 0 12px rgba(59, 130, 246, 0.24)",
   ...(isFlashing
     ? {
