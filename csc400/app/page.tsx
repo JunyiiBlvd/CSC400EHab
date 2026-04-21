@@ -1448,7 +1448,7 @@ export default function Home() {
                   <AlertsFeed alerts={alerts} fillHeight />
                 </Box>
 
-                <Paper sx={{ ...panelStyle, mt: "auto" }}>
+                <Paper sx={{ ...panelStyle, mt: 2 }}>
                   <Typography variant="h6" sx={{ mb: 1.5 }}>
                     ML Status
                   </Typography>

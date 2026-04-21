@@ -38,7 +38,8 @@ export default function AlertsFeed({
 
       <Box
         sx={{
-          display: "grid",
+          display: "flex",
+          flexDirection: "column",
           gap: 1,
           flex: fillHeight ? 1 : "0 1 auto",
           minHeight: 0,
@@ -60,8 +61,8 @@ export default function AlertsFeed({
                 alert.level === "crit"
                   ? "rgba(255,0,0,0.15)"
                   : alert.level === "warn"
-                  ? "rgba(255,165,0,0.15)"
-                  : "rgba(0,150,255,0.15)",
+                    ? "rgba(255,165,0,0.15)"
+                    : "rgba(0,150,255,0.15)",
             }}
           >
             <Typography variant="body2">{alert.message}</Typography>
@@ -69,7 +70,13 @@ export default function AlertsFeed({
             <Chip
               size="small"
               label={alert.level.toUpperCase()}
-              color={alert.level === "crit" ? "error" : alert.level === "warn" ? "warning" : "info"}
+              color={
+                alert.level === "crit"
+                  ? "error"
+                  : alert.level === "warn"
+                    ? "warning"
+                    : "info"
+              }
             />
           </Box>
         ))}
