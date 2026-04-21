@@ -36,6 +36,7 @@ import type {
 } from "./lib/types";
 import {
   createProfile,
+  resetRuntime,
   fetchMlStatus,
   fetchProfiles,
   reloadMlModel,
@@ -850,6 +851,10 @@ export default function Home() {
       setProfileError(null);
       const profile = await createProfile(trimmed);
 
+      await resetRuntime();
+      setHistoryByNode({});
+      setTelemetryByNode({});
+
       setProfiles((prev) =>
         [...prev, profile].sort((a, b) => a.name.localeCompare(b.name)),
       );
@@ -858,6 +863,27 @@ export default function Home() {
     } catch (e: unknown) {
       setProfileError(
         e instanceof Error ? e.message : "Failed to create profile",
+      );
+    }
+  }
+
+  async function handleProfileChange(
+    event: React.ChangeEvent<HTMLInputElement>,
+  ) {
+    const nextValue = Number(event.target.value);
+    const nextProfileId = Number.isNaN(nextValue) ? null : nextValue;
+
+    try {
+      setProfileError(null);
+
+      await resetRuntime();
+      setHistoryByNode({});
+      setTelemetryByNode({});
+
+      setActiveProfileId(nextProfileId);
+    } catch (e: unknown) {
+      setProfileError(
+        e instanceof Error ? e.message : "Failed to switch profile",
       );
     }
   }
@@ -1091,12 +1117,7 @@ export default function Home() {
                 fullWidth
                 size="small"
                 value={activeProfileId ?? ""}
-                onChange={(event) => {
-                  const nextValue = Number(event.target.value);
-                  setActiveProfileId(
-                    Number.isNaN(nextValue) ? null : nextValue,
-                  );
-                }}
+                onChange={handleProfileChange}
                 sx={{
                   mt: 1,
                   "& .MuiOutlinedInput-root": {

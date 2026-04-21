@@ -44,6 +44,24 @@ def make_node(node_id: str, seed: int, initial_temp: float):
     humidity = HumidityModel(45.0, 0.01, 0.2, seed + 2000, reference_temp=21.0)
     return VirtualNode(node_id, thermal, airflow, humidity, random_seed=seed + 3000)
 
+def reset_runtime_state():
+    global nodes, central_server, _prev_edge_anomaly, _prev_central_detection, _step_seq
+
+    nodes = {
+        node_id: make_node(node_id, NODE_SEEDS[node_id], NODE_TEMPS[node_id])
+        for node_id in NODE_SEEDS
+    }
+
+    try:
+        _central_model = ModelLoader()
+        central_server = CentralServer(_central_model)
+    except Exception as e:
+        print(f"[CentralServer] Failed to reload model during reset: {e}")
+        central_server = None
+
+    _prev_edge_anomaly = {nid: False for nid in NODE_SEEDS}
+    _prev_central_detection = {nid: False for nid in NODE_SEEDS}
+    _step_seq = {nid: 0 for nid in NODE_SEEDS}
 
 NODE_SEEDS = {"node-1": 42, "node-2": 43, "node-3": 44}
 NODE_TEMPS = {"node-1": 21.0, "node-2": 22.0, "node-3": 21.5}
@@ -367,3 +385,8 @@ async def inject_scenario(node_id: str, scenario: str):
         nodes[node_id].reset_anomaly_state()
         return {"status": "reset", "node": node_id}
     return {"error": f"Unknown scenario: {scenario}"}
+
+@app.post("/api/runtime/reset")
+def reset_runtime():
+    reset_runtime_state()
+    return {"ok": True}

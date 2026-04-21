@@ -41,7 +41,7 @@ export async function createProfile(name: string): Promise<UserProfile> {
 
 export async function setAirflowObstruction(
   nodeId: string,
-  ratio: number
+  ratio: number,
 ): Promise<NodeControlResponse & { obstruction_ratio: number }> {
   const res = await fetch(`${API_BASE}/api/controls/airflow_obstruction`, {
     method: "POST",
@@ -55,7 +55,7 @@ export async function setAirflowObstruction(
 }
 
 export async function simulateFanFailure(
-  nodeId: string
+  nodeId: string,
 ): Promise<NodeControlResponse & { obstruction_ratio: number }> {
   const res = await fetch(`${API_BASE}/api/controls/fan_failure`, {
     method: "POST",
@@ -69,7 +69,7 @@ export async function simulateFanFailure(
 }
 
 export async function resetAirflow(
-  nodeId: string
+  nodeId: string,
 ): Promise<NodeControlResponse & { obstruction_ratio: number }> {
   const res = await fetch(`${API_BASE}/api/controls/reset_airflow`, {
     method: "POST",
@@ -84,7 +84,7 @@ export async function resetAirflow(
 
 export async function setHumidity(
   nodeId: string,
-  humidity: number
+  humidity: number,
 ): Promise<NodeControlResponse & { humidity: number }> {
   const res = await fetch(`${API_BASE}/api/controls/set_humidity`, {
     method: "POST",
@@ -116,16 +116,19 @@ export async function reloadMlModel(): Promise<{
 }
 
 export async function injectThermalSpike(
-  nodeId: string
+  nodeId: string,
 ): Promise<{ status: string; node: string; scenario: string }> {
   const params = new URLSearchParams({
     node_id: nodeId,
     scenario: "thermal_spike",
   });
 
-  const res = await fetch(`${API_BASE}/simulation/inject?${params.toString()}`, {
-    method: "POST",
-  });
+  const res = await fetch(
+    `${API_BASE}/simulation/inject?${params.toString()}`,
+    {
+      method: "POST",
+    },
+  );
 
   if (!res.ok) throw new Error(`API error ${res.status}`);
 
@@ -134,4 +137,15 @@ export async function injectThermalSpike(
     node: string;
     scenario: string;
   };
+}
+
+export async function resetRuntime(): Promise<void> {
+  const res = await fetch(`${API_BASE}/api/runtime/reset`, {
+    method: "POST",
+  });
+
+  const data = await res.json();
+  if (!res.ok || !data.ok) {
+    throw new Error(data.error ?? "Failed to reset runtime");
+  }
 }
