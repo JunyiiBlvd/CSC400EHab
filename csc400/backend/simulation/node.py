@@ -204,8 +204,10 @@ class VirtualNode:
                 )
                 self.coolant_leak_remaining_steps -= 1
             else:
-                current_humidity = min(85.0, self.coolant_leak_base_humidity + 50.0)
-
+                # current_humidity = min(85.0, self.coolant_leak_base_humidity + 50.0)
+                self.coolant_leak_active = False
+                self.humidity_model.current_humidity = current_humidity
+                
         telemetry = {
             "node_id": self.node_id,
             "timestamp": datetime.now(timezone.utc).isoformat(),
