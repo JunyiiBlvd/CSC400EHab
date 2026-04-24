@@ -159,6 +159,10 @@ def fan_failure(body: NodeTargetRequest):
 
     if central_server is not None:
         central_server.record_injection(body.node_id, time.time())
+
+    _prev_edge_anomaly[body.node_id] = False
+    _prev_central_detection[body.node_id] = False
+
     return {"ok": True, "node_id": body.node_id}
 
 
@@ -369,16 +373,28 @@ async def inject_scenario(node_id: str, scenario: str):
         node_inst.inject_hvac_failure(duration_seconds=40)
         if central_server is not None:
             central_server.record_injection(node_id, time.time())
+
+        _prev_edge_anomaly[node_id] = False
+        _prev_central_detection[node_id] = False
+
         return {"status": "injected", "node": node_id, "scenario": scenario}
     if scenario == "thermal_spike":
         node_inst.inject_thermal_spike(duration_seconds=30)
         if central_server is not None:
             central_server.record_injection(node_id, time.time())
+
+        _prev_edge_anomaly[node_id] = False
+        _prev_central_detection[node_id] = False
+
         return {"status": "injected", "node": node_id, "scenario": scenario}
     if scenario == "coolant_leak":
         node_inst.inject_coolant_leak()
         if central_server is not None:
             central_server.record_injection(node_id, time.time())
+
+        _prev_edge_anomaly[node_id] = False
+        _prev_central_detection[node_id] = False
+          
         return {"status": "injected", "node": node_id, "scenario": scenario}
     if scenario == "reset":
         nodes[node_id] = make_node(node_id, NODE_SEEDS[node_id], NODE_TEMPS[node_id])

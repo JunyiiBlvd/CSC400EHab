@@ -141,12 +141,32 @@ class CentralServer:
 
         self._prev_persistent[node_id] = persistent_anomaly
 
+    '''
     def record_injection(self, node_id: str, injection_ts: float) -> None:
         """Called when an anomaly is injected. Stores injection timestamp
         so edge_latency_ms and central_latency_ms can be computed."""
         self._ensure_node(node_id)
         self._records[node_id]["injection_ts"] = injection_ts
+    '''
 
+    def record_injection(self, node_id: str, injection_ts: float) -> None:
+        self._ensure_node(node_id)
+
+        self._records[node_id].update({
+            "injection_ts": injection_ts,
+            "edge_detection_ts": None,
+            "central_detection_ts": None,
+            "edge_latency_ms": None,
+            "central_latency_ms": None,
+            "latency_delta_ms": None,
+            "bytes_edge": None,
+            "bytes_central": 0,
+            "last_updated": None,
+        })
+
+        self._anomaly_flags[node_id] = []
+        self._prev_persistent[node_id] = False
+        
     def get_status(self) -> Dict[str, Any]:
         """
         Return per-node detection and bandwidth statistics.
