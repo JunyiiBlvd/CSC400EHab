@@ -100,8 +100,8 @@ class CentralServer:
                 record["bytes_edge"] = 0
             record["bytes_edge"] += bytes_edge
 
-        # Store latest edge detection timestamp when provided
-        if edge_detection_ts is not None:
+        # Store edge detection timestamp — first occurrence per injection cycle only
+        if edge_detection_ts is not None and record["edge_detection_ts"] is None:
             record["edge_detection_ts"] = edge_detection_ts
 
         # Feed into this node's sliding window
@@ -122,9 +122,9 @@ class CentralServer:
         self._anomaly_flags[node_id] = flags[-self.ANOMALY_PERSISTENCE_STEPS:]
         persistent_anomaly = any(flags)
 
-        # Record central_detection_ts on False → True transition only
+        # Record central_detection_ts on first False → True transition per injection cycle
         prev = self._prev_persistent[node_id]
-        if persistent_anomaly and not prev:
+        if persistent_anomaly and not prev and record["central_detection_ts"] is None:
             record["central_detection_ts"] = time.time()
             injection_ts = record["injection_ts"]
             if record["edge_detection_ts"] is not None:
