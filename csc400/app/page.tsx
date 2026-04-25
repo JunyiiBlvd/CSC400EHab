@@ -493,6 +493,7 @@ export default function Home() {
   const draggingObstructionNodeIdRef = useRef<string | null>(null);
   const draggingHumidityNodeIdRef = useRef<string | null>(null);
   const prevAnomalyRef = useRef<Record<string, boolean>>({});
+  const lastAnomalyAlertTs = useRef<Record<string, number>>({});
   const activeProfileIdRef = useRef<number | null>(null);
 
   const selectedTelemetry = telemetryByNode[selectedNodeId] ?? null;
@@ -503,6 +504,7 @@ export default function Home() {
   useEffect(() => {
     activeProfileIdRef.current = activeProfileId;
     prevAnomalyRef.current = {};
+    lastAnomalyAlertTs.current = {};
   }, [activeProfileId]);
 
   function addAlerts(newAlerts: AlertItem[]) {
@@ -748,7 +750,12 @@ export default function Home() {
       const wasAnomaly = prevAnomalyRef.current[nodeId] ?? false;
       const isAnomaly = telemetry.is_anomaly === true;
 
-      if (!wasAnomaly && isAnomaly) {
+      const nowMs = Date.now();
+      const lastAlertMs = lastAnomalyAlertTs.current[nodeId] ?? 0;
+      const withinDebounce = nowMs - lastAlertMs < 60_000;
+
+      if (!wasAnomaly && isAnomaly && !withinDebounce) {
+        lastAnomalyAlertTs.current[nodeId] = nowMs;
         const reason = getAnomalyReason(telemetry);
         const scoreStr =
           typeof telemetry.anomaly_score === "number"
