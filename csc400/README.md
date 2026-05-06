@@ -1,37 +1,69 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+1. Project Description - What the project does
 
-## Getting Started
+E-Habitat is an interactive simulation platform that models a server room environment with three virtual nodes. Each virtual node can represent any device you would find in a server room, like a server or IoT (Internet of Things) device. Users can inject anomalies, monitor node telemetry, view past history, compare edge and centralized latency metrics, and manually adjust certain node properties.
 
-Two servers must be running simultaneously. Open two terminal windows from the project root.
+2. Team Members - Names and contributions
 
-**Terminal 1 — FastAPI backend (port 8000):**
-```bash
-source venv/bin/activate
-uvicorn backend.api:app --reload
-```
+Logan Caraballo - Project Lead / Backend
+Jared He - Frontend / UI
+Gavin Paeth - Data / Testing
 
-**Terminal 2 — Next.js frontend (port 3000):**
-```bash
-npm run dev
-```
+Roles were not concrete; for example, Logan helped Jared with the frontend UI, Jared helped with bug fixes across front and backend, and all of us contributed to external testing, documentation, and other areas.
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+3. Technologies Used - Languages, frameworks, tools
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+Frontend:
+Languages: TypeScript (typed superset of JavaScript)
+Framework: Next.js 16.1.6, React
+UI Library: Tailwind CSS, Material UI (used for AlertsFeed)
+Charting: Recharts
+Backend:
+Runtime: Python 3.12.3, Uvicorn
+Framework: FastAPI
+Validation: Pydantic (built into FastAPI)
+Database:
+Database: SQLite
+Access: Python built-in sqlite3 module - no ORM
+Discipline: parameterized queries; raw SQL only; DB writes wrapped in try/except so a failure cannot crash the WebSocket handler
+Machine Learning:
+scikit-learn 1.8.0
+Active model: models/model_v2_hybrid_real.pkl (Isolation Forest, hybrid-trained April 2026)
+Active scaler: models/scaler_v2.pkl (RobustScaler - must be applied before inference)
+Operational threshold: score < 0.15 (set explicitly in model_loader.py)
+Development Tools:
+Version control: Git + GitHub
+Package Manager: npm, pip
+Environment Management: Node.js runtime, Python virtual environment (venv)
+Testing Tools: pytest - 33 tests passing across all backend modules
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+4. Installation Instructions - How to set up locally
 
-## Learn More
+In a terminal,
+(1) Verify Python installation with command "python3 -- version". If not installed, install it.
+(2) Clone the GitHub repository: "git clone https://github.com/JunyiiBlvd/CSC400EHab.git"
+(4) Navigate to the project folder in the terminal.
+(3) Create the venv: "python3 -m venv venv"
+(4) Activate the virtual environment: "source venv/bin/activate"
+(5) Install dependencies: "pip install -r requirements.txt"
+(6) Run the backend server: "python -m uvicorn backend.api:app --reload --port 8000"
 
-To learn more about Next.js, take a look at the following resources:
+In a second terminal in the project folder,
+(7) Install frontend dependencies: "npm install"
+(8) Run the frontend page: "npm run dev"
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+In your browser,
+(9) Go to the page: "localhost:3000"
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+5. Running the Application - How to start/use it
 
-## Deploy on Vercel
+Consult the instructions above.
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+6. Deployment - How it's deployed (if applicable)
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Due to time constraints and scope creep, we were unable to accomplish deployment or containerization. This will be a priority objective for future expansion.
+
+7. Screenshots - 2-3 key screenshots
+
+![E-Habitat dashboard](README_dashboard.png)
+![What your terminal should look like after running frontend](README_npm.png)
+![What your terminal should look like after running backend](README_uvicorn.png)
